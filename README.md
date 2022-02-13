@@ -504,7 +504,7 @@ debian                    stretch   2c3ad12c6ecf   6 months ago     101MB
 ~~~
 ### **Выводы про разницу между контейнером и образом:**
 Образ докера являются основой контейнеров.
-Образ - это упорядоченная коллекция изменений корневой файловой системы и соответствующих параметров 
+Образ - это упорядоченная коллекция изменений корневой файловой системы и соответствующих параметров
 выполнения для использования в среде выполнения контейнера.
 Образ обычно содержит объединение многоуровневых файловых систем, расположенных друг на друге.
 Образ не имеет состояния и никогда не изменяется.
@@ -552,6 +552,219 @@ Docker определяет стандарт для отправки прогр�
 
 ## **Выполнено:**
 
+1. Docker machine
+
+
+Ставим Docker machine [https://github.com/docker/machine/releases](https://github.com/docker/machine/releases)
+~~~bash
+curl -L https://github.com/docker/machine/releases/download/v0.16.2/docker-machine-`uname -s`-`uname -m` >/tmp/docker-machine &&
+~~~
+
+Создадим Docker хост в Yandex Cloud и настроим локальное окружение на работу с ним
+~~~bash
+➜  Deron-D_microservices git:(docker-2) yc compute instance create \
+  --name docker-host \
+  --zone ru-central1-a \
+  --network-interface subnet-name=reddit-app-net-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
+  --ssh-key ~/.ssh/appuser.pub
+done (24s)
+id: fhmd1na8srgn4q5top8l
+folder_id: b1glujc915djb9lako8f
+created_at: "2022-02-09T18:42:22Z"
+name: docker-host
+zone_id: ru-central1-a
+platform_id: standard-v2
+resources:
+  memory: "2147483648"
+  cores: "2"
+  core_fraction: "100"
+status: RUNNING
+boot_disk:
+  mode: READ_WRITE
+  device_name: fhmu1dcoem3popvonvrr
+  auto_delete: true
+  disk_id: fhmu1dcoem3popvonvrr
+network_interfaces:
+- index: "0"
+  mac_address: d0:0d:d0:dd:48:e6
+  subnet_id: e9bcqv136grugc8pqv6k
+  primary_v4_address:
+    address: 10.128.0.34
+    one_to_one_nat:
+      address: 51.250.5.184
+      ip_version: IPV4
+fqdn: fhmd1na8srgn4q5top8l.auto.internal
+scheduling_policy: {}
+network_settings:
+  type: STANDARD
+placement_policy: {}
+~~~
+
+
+После чего можно инициализировать окружение Docker.
+~~~bash
+➜  Deron-D_microservices git:(docker-2) ✗ docker-machine create \
+  --driver generic \
+  --generic-ip-address=51.250.5.184 \
+  --generic-ssh-user yc-user \
+  --generic-ssh-key ~/.ssh/appuser \
+docker-host
+~~~
+
+Проверяем, что наш Docker-хост успешно создан
+~~~bash
+➜  Deron-D_microservices git:(docker-2) ✗ docker-machine ls
+NAME          ACTIVE   DRIVER    STATE     URL                       SWARM   DOCKER      ERRORS
+docker-host   -        generic   Running   tcp://51.250.5.184:2376           v20.10.12
+~~~
+
+И начинаем с ним работу
+~~~bash
+$ eval $(docker-machine env docker-host)
+~~~
+> переключиться обратно на локальный хост `eval $(docker-machine env --unset)`
+
+
+2. Сборка образа
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker build -t reddit:latest .
+Sending build context to Docker daemon  8.192kB
+Step 1/11 : FROM ubuntu:18.04
+ ---> dcf4d4bef137
+Step 2/11 : RUN apt-get update
+ ---> Using cache
+ ---> cb0cee1bbe0d
+Step 3/11 : RUN apt-get install -y mongodb-server ruby-full ruby-dev build-essential git
+ ---> Using cache
+ ---> c99964f40c4f
+Step 4/11 : RUN gem install bundler
+ ---> Using cache
+ ---> df14a7870f89
+Step 5/11 : RUN git clone -b monolith https://github.com/express42/reddit.git
+ ---> Using cache
+ ---> efd55a5d1952
+Step 6/11 : COPY mongod.conf /etc/mongod.conf
+ ---> Using cache
+ ---> 3829a455e7a6
+Step 7/11 : COPY db_config /reddit/db_config
+ ---> Using cache
+ ---> a36862cab24c
+Step 8/11 : COPY start.sh /start.sh
+ ---> Using cache
+ ---> bec898124297
+Step 9/11 : RUN cd /reddit && rm Gemfile.lock && bundle install
+ ---> Using cache
+ ---> 865adfa813d2
+Step 10/11 : RUN chmod 0777 /start.sh
+ ---> Using cache
+ ---> 5a162930ae1f
+Step 11/11 : CMD ["/start.sh"]
+ ---> Using cache
+ ---> 924d4cfbfd6e
+Successfully built 924d4cfbfd6e
+Successfully tagged reddit:latest
+~~~
+
+Посмотрим на все образы (в том числе промежуточные):
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker images -a
+REPOSITORY   TAG       IMAGE ID       CREATED              SIZE
+reddit       latest    924d4cfbfd6e   24 seconds ago       647MB
+<none>       <none>    5a162930ae1f   About a minute ago   647MB
+<none>       <none>    865adfa813d2   About a minute ago   647MB
+<none>       <none>    bec898124297   2 minutes ago        616MB
+<none>       <none>    a36862cab24c   2 minutes ago        616MB
+<none>       <none>    3829a455e7a6   2 minutes ago        616MB
+<none>       <none>    efd55a5d1952   2 minutes ago        616MB
+<none>       <none>    df14a7870f89   3 minutes ago        616MB
+<none>       <none>    c99964f40c4f   3 minutes ago        614MB
+<none>       <none>    cb0cee1bbe0d   6 minutes ago        102MB
+ubuntu       18.04     dcf4d4bef137   11 days ago          63.2MB
+~~~
+
+
+3. Запуск контейнера
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker run --name reddit -d --network=host reddit:latest
+fc1e14519ad2e1b50d80ea866c9f6f11028dab5039093f7402292af2c6db4994
+~~~
+
+Проверим результат:
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker-machine ls
+NAME          ACTIVE   DRIVER    STATE     URL                       SWARM   DOCKER      ERRORS
+docker-host   *        generic   Running   tcp://51.250.5.184:2376           v20.10.12
+
+➜  docker-monolith git:(docker-2) ✗ curl 51.250.5.184:9292
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta content='IE=Edge,chrome=1' http-equiv='X-UA-Compatible'>
+<meta content='width=device-width, initial-scale=1.0' name='viewport'>
+<title>Monolith Reddit :: All posts</title>
+....
+~~~
+
+4. Docker hub
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker login
+Login with your Docker ID to push and pull images from Docker Hub. If you don't have a Docker ID, head over to https://hub.docker.com to create one.
+Username: deron73
+Password:
+WARNING! Your password will be stored unencrypted in /home/dpp/.docker/config.json.
+Configure a credential helper to remove this warning. See
+https://docs.docker.com/engine/reference/commandline/login/#credentials-store
+
+Login Succeeded
+➜  docker-monolith git:(docker-2) ✗ docker tag reddit:latest deron73/reddit:1.0
+➜  docker-monolith git:(docker-2) ✗ docker push deron73/reddit:1.0
+The push refers to repository [docker.io/deron73/reddit]
+5ba9b12c850a: Pushed
+dc329de6c6eb: Pushed
+325283f40c08: Pushed
+3d6b22302c2e: Pushed
+6e31d5ed0d70: Pushed
+41bcb08ce82e: Pushed
+85d1a7c521b4: Pushed
+2a3021aef03b: Pushed
+0d9090269675: Pushed
+1dc52a6b4de8: Mounted from library/ubuntu
+1.0: digest: sha256:326660228ed5a7fa71bf9d0bf0d9c7a28fb02786ce362b1153026891de1c7aeb size: 2410
+~~~
+
+Проверяем:
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker run --name reddit -d -p 9292:9292 deron73/reddit:1.0
+72969b1a72487e6ec66668b6f7193571057ed438474be75f66718f454b2d57a1
+~~~
+
+5. Удаляем созданные в ходе работы ресурсы:
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker-machine rm docker-host
+About to remove docker-host
+WARNING: This action will delete both local reference and remote instance.
+Are you sure? (y/n): y
+Successfully removed docker-host
+~~~
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ yc compute instances list
++----------------------+-------------+---------------+---------+--------------+-------------+
+|          ID          |    NAME     |    ZONE ID    | STATUS  | EXTERNAL IP  | INTERNAL IP |
++----------------------+-------------+---------------+---------+--------------+-------------+
+| fhmd1na8srgn4q5top8l | docker-host | ru-central1-a | RUNNING | 51.250.5.184 | 10.128.0.34 |
++----------------------+-------------+---------------+---------+--------------+-------------+
+
+➜  docker-monolith git:(docker-2) ✗ yc compute instance delete docker-host
+done (21s)
+~~~
 
 ## **Полезное:**
 
