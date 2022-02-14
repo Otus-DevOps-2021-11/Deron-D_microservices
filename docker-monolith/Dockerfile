@@ -3,7 +3,7 @@ FROM ubuntu:18.04
 RUN apt-get update
 RUN apt-get install -y mongodb-server ruby-full ruby-bundler ruby-dev build-essential git
 RUN git clone -b monolith https://github.com/express42/reddit.git
-RUN sed -i "s/'mongo'$/'mongo', '~> 2.0.0'/" reddit/Gemfile
+# RUN sed -i "s/'mongo'$/'mongo', '~> 2.0.0'/" reddit/Gemfiledoc
 
 COPY mongod.conf /etc/mongod.conf
 COPY db_config /reddit/db_config
