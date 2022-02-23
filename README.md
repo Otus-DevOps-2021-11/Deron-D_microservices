@@ -24,6 +24,12 @@
 
 ## **Выполнено:**
 
+- Интеграция с GitHub
+Наберем в своем канале Slack команду-сообщение:
+```
+/github subscribe Otus-DevOps-2021-11/Deron-D_microservices commits:*
+```
+
 1. Устанавливаем Docker:
 
  [Install Docker Engine on CentOS](https://docs.docker.com/engine/install/centos/)
