@@ -562,16 +562,16 @@ curl -L https://github.com/docker/machine/releases/download/v0.16.2/docker-machi
 
 Создадим Docker хост в Yandex Cloud и настроим локальное окружение на работу с ним
 ~~~bash
-➜  Deron-D_microservices git:(docker-2) yc compute instance create \
+➜  Deron-D_infra git:(main) yc compute instance create \
   --name docker-host \
   --zone ru-central1-a \
   --network-interface subnet-name=reddit-app-net-ru-central1-a,nat-ip-version=ipv4 \
   --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
   --ssh-key ~/.ssh/appuser.pub
-done (24s)
-id: fhmd1na8srgn4q5top8l
+done (19s)
+id: fhm7srocib0tiak4n3og
 folder_id: b1glujc915djb9lako8f
-created_at: "2022-02-09T18:42:22Z"
+created_at: "2022-02-14T18:30:28Z"
 name: docker-host
 zone_id: ru-central1-a
 platform_id: standard-v2
@@ -582,41 +582,41 @@ resources:
 status: RUNNING
 boot_disk:
   mode: READ_WRITE
-  device_name: fhmu1dcoem3popvonvrr
+  device_name: fhm0r8po6uisnmtgbepe
   auto_delete: true
-  disk_id: fhmu1dcoem3popvonvrr
+  disk_id: fhm0r8po6uisnmtgbepe
 network_interfaces:
 - index: "0"
-  mac_address: d0:0d:d0:dd:48:e6
+  mac_address: d0:0d:7e:6f:0c:92
   subnet_id: e9bcqv136grugc8pqv6k
   primary_v4_address:
-    address: 10.128.0.34
+    address: 10.128.0.10
     one_to_one_nat:
-      address: 51.250.5.184
+      address: 51.250.15.142
       ip_version: IPV4
-fqdn: fhmd1na8srgn4q5top8l.auto.internal
+fqdn: fhm7srocib0tiak4n3og.auto.internal
 scheduling_policy: {}
 network_settings:
   type: STANDARD
 placement_policy: {}
 ~~~
 
-
 После чего можно инициализировать окружение Docker.
 ~~~bash
-➜  Deron-D_microservices git:(docker-2) ✗ docker-machine create \
+➜  Deron-D_infra git:(main) docker-machine create \
   --driver generic \
-  --generic-ip-address=51.250.5.184 \
+  --generic-ip-address=51.250.15.142 \
   --generic-ssh-user yc-user \
   --generic-ssh-key ~/.ssh/appuser \
 docker-host
+Running pre-create checks...
 ~~~
 
 Проверяем, что наш Docker-хост успешно создан
 ~~~bash
-➜  Deron-D_microservices git:(docker-2) ✗ docker-machine ls
-NAME          ACTIVE   DRIVER    STATE     URL                       SWARM   DOCKER      ERRORS
-docker-host   -        generic   Running   tcp://51.250.5.184:2376           v20.10.12
+➜  Deron-D_infra git:(main) docker-machine ls
+NAME          ACTIVE   DRIVER    STATE     URL                        SWARM   DOCKER      ERRORS
+docker-host   -        generic   Running   tcp://51.250.15.142:2376           v20.10.12
 ~~~
 
 И начинаем с ним работу
@@ -695,21 +695,60 @@ fc1e14519ad2e1b50d80ea866c9f6f11028dab5039093f7402292af2c6db4994
 Проверим результат:
 ~~~bash
 ➜  docker-monolith git:(docker-2) ✗ docker-machine ls
-NAME          ACTIVE   DRIVER    STATE     URL                       SWARM   DOCKER      ERRORS
-docker-host   *        generic   Running   tcp://51.250.5.184:2376           v20.10.12
+NAME          ACTIVE   DRIVER    STATE     URL                        SWARM   DOCKER      ERRORS
+docker-host   *        generic   Running   tcp://51.250.15.142:2376           v20.10.12
 
-➜  docker-monolith git:(docker-2) ✗ curl 51.250.5.184:9292
+➜  docker-monolith git:(docker-2) ✗ curl 51.250.15.142:9292
 <!DOCTYPE html>
 <html lang='en'>
 <head>
 <meta charset='utf-8'>
 <meta content='IE=Edge,chrome=1' http-equiv='X-UA-Compatible'>
 <meta content='width=device-width, initial-scale=1.0' name='viewport'>
-<title>Monolith Reddit :: All posts</title>
+<title>Monolith Reddit :: All posts</title>q
 ....
 ~~~
 
-4. Docker hub
+4. Оптимизация.
+
+Попробуем уменьшить размер образа и количество слоев. Создадим файл `Dockerfile.optimized` со следующим содержимым:
+~~~Dockerfile
+FROM ubuntu:18.04
+
+RUN apt-get update && \
+    apt-get install -y mongodb-server ruby-full ruby-bundler ruby-dev build-essential git && \
+    git clone -b monolith https://github.com/express42/reddit.git && \
+    apt-get autoremove -y &&  \
+    apt-get autoclean && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /tmp/* /var/tmp/*
+
+COPY mongod.conf /etc/mongod.conf
+COPY db_config /reddit/db_config
+COPY start.sh /start.sh
+
+RUN cd /reddit && rm Gemfile.lock && bundle install
+RUN chmod 0777 /start.sh
+
+CMD ["/start.sh"]
+~~~
+
+~~~bash
+docker-monolith git:(docker-2) ✗ docker build -t reddit:1.1 . -f Dockerfile.optimized
+~~~
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker images -a
+REPOSITORY   TAG       IMAGE ID       CREATED          SIZE
+reddit       1.1       ce470d456105   29 minutes ago   616MB
+...
+reddit       latest    675ad42ddbea   51 minutes ago   655MB
+...
+ubuntu       18.04     dcf4d4bef137   12 days ago      63.2MB
+~~~
+
+5. Docker hub
 
 ~~~bash
 ➜  docker-monolith git:(docker-2) ✗ docker login
@@ -719,32 +758,214 @@ Password:
 WARNING! Your password will be stored unencrypted in /home/dpp/.docker/config.json.
 Configure a credential helper to remove this warning. See
 https://docs.docker.com/engine/reference/commandline/login/#credentials-store
-
 Login Succeeded
-➜  docker-monolith git:(docker-2) ✗ docker tag reddit:latest deron73/reddit:1.0
-➜  docker-monolith git:(docker-2) ✗ docker push deron73/reddit:1.0
-The push refers to repository [docker.io/deron73/reddit]
+➜  docker-monolith git:(docker-2) ✗ docker tag reddit:1.1 deron73/otus-reddit:1.0
+➜  docker-monolith git:(docker-2) ✗ docker push deron73/otus-reddit:1.0
+The push refers to repository [docker.io/deron73/otus-reddit]
 5ba9b12c850a: Pushed
-dc329de6c6eb: Pushed
+0bf01b51819b: Pushed
 325283f40c08: Pushed
-3d6b22302c2e: Pushed
-6e31d5ed0d70: Pushed
-41bcb08ce82e: Pushed
-85d1a7c521b4: Pushed
-2a3021aef03b: Pushed
-0d9090269675: Pushed
+a844f1d825e6: Pushed
+36b33cb1d4ff: Pushed
+8f9e73e9156d: Pushed
 1dc52a6b4de8: Mounted from library/ubuntu
-1.0: digest: sha256:326660228ed5a7fa71bf9d0bf0d9c7a28fb02786ce362b1153026891de1c7aeb size: 2410
+1.0: digest: sha256:688012a2de6158c20ee3dda784352baa403f59440aae8e394c49e1ace80b25ae size: 1782
 ~~~
 
 Проверяем:
 
 ~~~bash
-➜  docker-monolith git:(docker-2) ✗ docker run --name reddit -d -p 9292:9292 deron73/reddit:1.0
-72969b1a72487e6ec66668b6f7193571057ed438474be75f66718f454b2d57a1
+➜  docker-monolith git:(docker-2) ✗ eval $(docker-machine env --unset)
+➜  docker-monolith git:(docker-2) ✗ docker images
+REPOSITORY                TAG       IMAGE ID       CREATED        SIZE
+deron73/ubuntu-tmp-file   latest    e909dc08bf43   5 days ago     63.1MB
+hello-world               latest    feb5d9fea6a5   4 months ago   13.3kB
+docker-compose_pgsql1c    latest    27b9045857c9   6 months ago   265MB
+docker-compose_postgres   latest    27b9045857c9   6 months ago   265MB
+ubuntu                    18.04     39a8cfeef173   6 months ago   63.1MB
+ubuntu                    bionic    39a8cfeef173   6 months ago   63.1MB
+debian                    stretch   2c3ad12c6ecf   6 months ago   101MB
+➜  docker-monolith git:(docker-2) ✗ docker run --name reddit -d -p 9292:9292 deron73/otus-reddit:1.0
+Unable to find image 'deron73/otus-reddit:1.0' locally
+1.0: Pulling from deron73/otus-reddit
+68e7bb398b9f: Pull complete
+5ae5dc3e4ca1: Pull complete
+5ce2afa0215b: Pull complete
+a9820bbe8aa3: Pull complete
+5a338a82d69c: Pull complete
+7e2f2e908650: Pull complete
+ee04fcf40e7a: Pull complete
+Digest: sha256:688012a2de6158c20ee3dda784352baa403f59440aae8e394c49e1ace80b25ae
+Status: Downloaded newer image for deron73/otus-reddit:1.0
+445b15da1a649ea59c8bf217a2cf697ed2f23f50518a1038dd272c4ef751d2bd
+
+➜  docker-monolith git:(docker-2) ✗ docker ps
+CONTAINER ID   IMAGE                     COMMAND       CREATED         STATUS         PORTS                                       NAMES
+445b15da1a64   deron73/otus-reddit:1.0   "/start.sh"   4 minutes ago   Up 4 minutes   0.0.0.0:9292->9292/tcp, :::9292->9292/tcp   reddit
+➜  docker-monolith git:(docker-2) ✗ curl localhost:9292
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta content='IE=Edge,chrome=1' http-equiv='X-UA-Compatible'>
+<meta content='width=device-width, initial-scale=1.0' name='viewport'>
+<title>Monolith Reddit :: All posts</title>
+...
 ~~~
 
-5. Удаляем созданные в ходе работы ресурсы:
+6. Еще проверяем:
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker logs reddit -f
+about to fork child process, waiting until server is ready for connections.
+forked process: 9
+child process started successfully, parent exiting
+Puma starting in single mode...
+* Puma version: 5.6.2 (ruby 2.5.1-p57) ("Birdie's Version")
+*  Min threads: 0
+*  Max threads: 5
+*  Environment: development
+*          PID: 32
+/reddit/helpers.rb:4: warning: redefining `object_id' may cause serious problems
+* Listening on http://0.0.0.0:9292
+Use Ctrl-C to stop
+172.17.0.1 - - [14/Feb/2022:19:47:43 +0000] "GET / HTTP/1.1" 200 1861 0.0190
+
+➜  docker-monolith git:(docker-2) ✗ docker exec -it reddit bash
+root@445b15da1a64:/# ps aux
+USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root           1  0.0  0.0  18384  3108 ?        Ss   19:42   0:00 /bin/bash /start.sh
+root           9  0.1  0.4 1020780 66740 ?       Sl   19:42   0:00 /usr/bin/mongod --fork --logpath /var/log/mongod.log --config /etc/mongodb.conf
+root          32  0.0  0.2 662180 37692 ?        Sl   19:43   0:00 puma 5.6.2 (tcp://0.0.0.0:9292) [reddit]
+root          45  0.2  0.0  18512  3448 pts/0    Ss   19:52   0:00 bash
+root          61  0.0  0.0  34412  2904 pts/0    R+   19:52   0:00 ps aux
+root@445b15da1a64:/# killall5 1
+root@445b15da1a64:/# %
+
+➜  docker-monolith git:(docker-2) ✗ docker ps
+CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+
+➜  docker-monolith git:(docker-2) ✗ docker stop reddit && docker rm reddit
+reddit
+reddit
+
+➜  docker-monolith git:(docker-2) ✗ docker run --name reddit --rm -it deron73/otus-reddit:1.0 bash
+root@348139cf6af3:/# ps aux
+USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root           1  0.0  0.0  18512  3316 pts/0    Ss   19:54   0:00 bash
+root          16  0.0  0.0  34412  2804 pts/0    R+   19:54   0:00 ps aux
+root@348139cf6af3:/# exit
+exit
+~~~
+
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker inspect deron73/otus-reddit:1.0
+[
+    {
+        "Id": "sha256:ce470d456105f7339ff61104c70a0c5eccd43e33b271cd88f393e52cd24ff527",
+        "RepoTags": [
+            "deron73/otus-reddit:1.0"
+        ],
+        "RepoDigests": [
+            "deron73/otus-reddit@sha256:688012a2de6158c20ee3dda784352baa403f59440aae8e394c49e1ace80b25ae"
+        ],
+        "Parent": "",
+        "Comment": "",
+        "Created": "2022-02-14T19:03:24.148992844Z",
+        "Container": "ca59dcfeacd9b9d9b0894b01d36837643f732777c66dd7c26d46092b744b5119",
+        "ContainerConfig": {
+            "Hostname": "ca59dcfeacd9",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "/bin/sh",
+                "-c",
+                "#(nop) ",
+                "CMD [\"/start.sh\"]"
+            ],
+            "Image": "sha256:9cdb1e2dfef3577af22d96bfbbd44c4bafb1fe0cd78065faeae5131bff2fa93e",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": null,
+            "OnBuild": null,
+            "Labels": {}
+        },
+        "DockerVersion": "20.10.12",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "/start.sh"
+            ],
+            "Image": "sha256:9cdb1e2dfef3577af22d96bfbbd44c4bafb1fe0cd78065faeae5131bff2fa93e",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": null,
+            "OnBuild": null,
+            "Labels": null
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 615930791,
+        "VirtualSize": 615930791,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/4b2a50183a0ef47f7007028a644651f3b98a32ff7e28c7a66b06ea33ceb2b7a4/diff:/var/lib/docker/overlay2/de269dbb24d65aac8b0c6becc07ed0f3f263673fe15bfb13d0c53deb4bcd675e/diff:/var/lib/docker/overlay2/d38c83d66e09b521e78d9ff1648e87339e3243939efb185e1bf1b158a46f35f4/diff:/var/lib/docker/overlay2/4b066fe029bca4727ee7fe6d6666db9a470b80b8f552879e331ce65242fe70d7/diff:/var/lib/docker/overlay2/1fc92dcf6859745850284d5b64917e9569726f1d8cd884a7f510cb799d91965e/diff:/var/lib/docker/overlay2/e2679a7f1ab3a6420c58db16ff044cb2a1930c2047840c353b7739a15c10b28a/diff",
+                "MergedDir": "/var/lib/docker/overlay2/f15dfb4fc82a549ecba2e2a404436c45585e37f28d31dd009d9876db8b2fa124/merged",
+                "UpperDir": "/var/lib/docker/overlay2/f15dfb4fc82a549ecba2e2a404436c45585e37f28d31dd009d9876db8b2fa124/diff",
+                "WorkDir": "/var/lib/docker/overlay2/f15dfb4fc82a549ecba2e2a404436c45585e37f28d31dd009d9876db8b2fa124/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:1dc52a6b4de8561423dd3ec5a1f7f77f5309fd8cb340f80b8bc3d87fa112003e",
+                "sha256:8f9e73e9156d454cf191074f3d2cf2e5e549998554675260663bdb84bb83ba96",
+                "sha256:36b33cb1d4ff2170784ed4d69175eb2615c5b18205b1bada6e021872a5124de0",
+                "sha256:a844f1d825e607f83ec3f00f3df4b3b7b54d34cac8bb3973a202d6872453a767",
+                "sha256:325283f40c08a4ec45f039b0436e33e60deaf2d89aeccc0291bb2a04c0e943d6",
+                "sha256:0bf01b51819b4ba1a0ab3013cd7b69bdf60efdec790c9dbd36cb699c5328c847",
+                "sha256:5ba9b12c850a6e7d1aed0ce3aeb982d0313035588dee9ddc2b19826ecb3495e1"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        }
+    }
+]
+~~~
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ docker inspect deron73/otus-reddit:1.0 -f '{{.ContainerConfig.Cmd}}'
+[/bin/sh -c #(nop)  CMD ["/start.sh"]]
+➜  docker-monolith git:(docker-2) ✗ docker run --name reddit -d -p 9292:9292 deron73/otus-reddit:1.0
+f028497bab3abfded0a2f41f888324411eb4bfe69e59fedd716796e219519acc
+~~~
+
+
+7. Освобождение ресурсов:
 
 ~~~bash
 ➜  docker-monolith git:(docker-2) ✗ docker-machine rm docker-host
@@ -764,6 +985,107 @@ Successfully removed docker-host
 
 ➜  docker-monolith git:(docker-2) ✗ yc compute instance delete docker-host
 done (21s)
+~~~
+
+Задание со ⭐
+
+1.  Создаем прототип в директории /docker-monolith/infra/ для автоматизации поднятия нескольких инстансов в Yandex Cloud, установки на них докера и запуска там образа deron73/otus-reddit:1.0
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ tree infra
+infra
+├── ansible
+│   ├── ansible.cfg
+│   └── docker_install.yml
+├── packer
+│   ├── docker.json
+│   ├── key.json
+│   ├── variables.json
+│   └── variables.json.example
+└── terraform
+    ├── inventory.tpl
+    ├── main.tf
+    ├── terraform.tfstate
+    ├── terraform.tfvars
+    ├── terraform.tfvars.example
+    └── variables.tf
+~~~
+
+2. Жарим образ:
+
+~~~bash
+➜  docker-monolith git:(docker-2) ✗ cd infra/packer
+➜  packer git:(docker-2) ✗ packer validate -var-file=./variables.json ./docker.json
+The configuration is valid.
+
+➜  packer git:(docker-2) ✗ packer build -var-file=./variables.json ./docker.json
+yandex: output will be in this color.
+
+...
+--> yandex: A disk image was created: docker-base (id: fd8ekbe042d70fehmd54) with family name docker-base
+~~~
+
+3. Поднимаем инфрастурктуру, задав количество инстансов `count_of_instance` в `terraform.tfvars`:
+
+~~~bash
+➜  packer git:(docker-2) ✗ cd ../terraform
+➜  terraform git:(docker-2) ✗ terraform init
+
+Initializing the backend...
+
+Initializing provider plugins...
+- Checking for available provider plugins...
+- Downloading plugin for provider "local" (hashicorp/local) 2.1.0...
+- Downloading plugin for provider "yandex" (terraform-providers/yandex) 0.35.0...
+
+➜  terraform git:(docker-2) ✗ terraform apply
+Plan: 3 to add, 0 to change, 0 to destroy.
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+...
+~~~
+
+4. Запускаем контейнеры в инстансах:
+~~~bash
+➜  terraform git:(docker-2) ✗ cd ../ansible
+➜  ansible git:(docker-2) ✗ ansible-playbook run_otus_reddit.yml
+
+PLAY [Pull & run docker container] *****
+...
+PLAY RECAP **************************************************************************************************************************************************
+62.84.119.234              : ok=1    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+62.84.124.98               : ok=1    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+~~~
+
+5. Проверяем:
+
+~~~bash
+➜  ansible git:(docker-2) ✗ curl 62.84.119.234 | head -7
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  1861  100  1861    0     0  50297      0 --:--:-- --:--:-- --:--:-- 50297
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta content='IE=Edge,chrome=1' http-equiv='X-UA-Compatible'>
+<meta content='width=device-width, initial-scale=1.0' name='viewport'>
+<title>Monolith Reddit :: All posts</title>
+➜  ansible git:(docker-2) ✗ curl 62.84.124.98 | head -7
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  1861  100  1861    0     0  56393      0 --:--:-- --:--:-- --:--:-- 56393
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta content='IE=Edge,chrome=1' http-equiv='X-UA-Compatible'>
+<meta content='width=device-width, initial-scale=1.0' name='viewport'>
+<title>Monolith Reddit :: All posts</title>
 ~~~
 
 ## **Полезное:**
