@@ -1128,7 +1128,77 @@ PLAY RECAP *********************************************************************
 
 ## **Выполнено:**
 
-1.
+1. Поднимаем Docker хост в Yandex Cloud, аналогично предыдущему ДЗ:
+
+~~bash
+➜  Deron-D_microservices git:(docker-3) ✗ yc compute instance create \
+  --name docker-host \
+  --zone ru-central1-a \
+  --network-interface subnet-name=docker-net-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
+  --ssh-key ~/.ssh/appuser.pub
+...
+      address: 51.250.5.113
+...
+~~~
+
+~~~bash
+docker-machine create \
+  --driver generic \
+  --generic-ip-address=51.250.5.113 \
+  --generic-ssh-user yc-user \
+  --generic-ssh-key ~/.ssh/appuser \
+docker-host
+~~~
+
+~~~bash
+➜  Deron-D_microservices git:(docker-3) ✗  eval $(docker-machine env docker-host)
+➜  Deron-D_microservices git:(docker-3) ✗  docker-machine ls
+NAME          ACTIVE   DRIVER    STATE     URL                       SWARM   DOCKER      ERRORS
+docker-host   *        generic   Running   tcp://51.250.5.113:2376           v20.10.12
+~~~
+
+2. Скачиваем и распаковываем архив:
+~~~bash
+➜  Deron-D_microservices git:(docker-3) ✗ wget -q https://github.com/express42/reddit/archive/microservices.zip
+➜  Deron-D_microservices git:(docker-3) ✗ unzip microservices.zip
+Archive:  microservices.zip
+...
+➜  Deron-D_microservices git:(docker-3) ✗ rm microservices.zip
+➜  Deron-D_microservices git:(docker-3) ✗ mv reddit-microservices src
+➜  Deron-D_microservices git:(docker-3) ✗ tree src
+src
+├── comment
+│   ├── comment_app.rb
+│   ├── config.ru
+│   ├── docker_build.sh
+│   ├── Gemfile
+│   ├── Gemfile.lock
+│   ├── helpers.rb
+│   └── VERSION
+├── post-py
+│   ├── docker_build.sh
+│   ├── helpers.py
+│   ├── post_app.py
+│   ├── requirements.txt
+│   └── VERSION
+├── README.md
+└── ui
+    ├── config.ru
+    ├── docker_build.sh
+    ├── Gemfile
+    ├── Gemfile.lock
+    ├── helpers.rb
+    ├── middleware.rb
+    ├── ui_app.rb
+    ├── VERSION
+    └── views
+        ├── create.haml
+        ├── index.haml
+        ├── layout.haml
+        └── show.haml
+
+~~~
 
 ## **Полезное:**
 
