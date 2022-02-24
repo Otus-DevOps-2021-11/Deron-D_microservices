@@ -1,0 +1,16 @@
+---
+- name: Pull & run docker container
+  hosts: all
+  gather_facts: no
+  become: true
+
+  tasks:
+      
+  - name: Start docker
+    docker_container:
+      name: reddit
+      image: deron73/otus-reddit:1.0
+      ports:
+        - "80:9292"
+      state: started
+      restart: yes
