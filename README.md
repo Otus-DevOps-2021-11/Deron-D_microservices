@@ -1130,7 +1130,7 @@ PLAY RECAP *********************************************************************
 
 1. Поднимаем Docker хост в Yandex Cloud, аналогично предыдущему ДЗ:
 
-~~bash
+~~~bash
 ➜  Deron-D_microservices git:(docker-3) ✗ yc compute instance create \
   --name docker-host \
   --zone ru-central1-a \
@@ -1140,6 +1140,7 @@ PLAY RECAP *********************************************************************
 ...
       address: 51.250.5.113
 ...
+
 ~~~
 
 ~~~bash
@@ -1159,6 +1160,7 @@ docker-host   *        generic   Running   tcp://51.250.5.113:2376           v20
 ~~~
 
 2. Скачиваем и распаковываем архив:
+
 ~~~bash
 ➜  Deron-D_microservices git:(docker-3) ✗ wget -q https://github.com/express42/reddit/archive/microservices.zip
 ➜  Deron-D_microservices git:(docker-3) ✗ unzip microservices.zip
@@ -1199,6 +1201,82 @@ src
         └── show.haml
 
 ~~~
+
+
+3. Создаем соответствующие Docker в нашей структуре:
+
+- [Сервис post-py](./src/post-py/Dockerfile)
+- [Сервис comment](./src/comment/Dockerfile)
+- [Сервис ui](./src/comment/ui)
+
+
+4. Скачаем последний образ MongoDB:
+
+Скачаем последний образ MongoDB:
+
+~~~bash
+docker pull mongo:latest
+~~~
+
+Соберем образы с нашими сервисами:
+
+~~~bash
+cd src
+docker build -t deron73/post:1.0 ./post-py
+docker build -t deron73/comment:1.0 ./comment
+docker build -t deron73/ui:1.0 ./ui
+~~~
+
+
+➜  src git:(docker-3) ✗ docker images
+REPOSITORY        TAG            IMAGE ID       CREATED              SIZE
+deron73/ui        1.0            667a7b4ca6c7   15 seconds ago       772MB
+deron73/comment   1.0            02f4337e4dda   About a minute ago   770MB
+deron73/post      1.0            eff55993fbb9   3 minutes ago        111MB
+mongo             latest         5285cb69ea55   3 weeks ago          698MB
+ruby              2.2            6c8e6f9667b2   3 years ago          715MB
+python            3.6.0-alpine   cb178ebbf0f2   4 years ago          88.6MB
+
+➜  src git:(docker-3) ✗ docker network create reddit
+74ae6ce357a50def43bf424eddcce15e15ffee1b4d4efae1d817266b5d582055
+➜  src git:(docker-3) ✗ docker network ls
+NETWORK ID     NAME      DRIVER    SCOPE
+5607fd2beb5f   bridge    bridge    local
+ce687ca5c751   host      host      local
+1de7e8f59dd4   none      null      local
+74ae6ce357a5   reddit    bridge    local
+➜  src git:(docker-3) ✗ docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+34ead3eb6bc4affd43763fcb0af215a46ebefe7d7c9e27cbe998f5ccac875660
+➜  src git:(docker-3) ✗ docker run -d --network=reddit --network-alias=post deron73/post:1.0
+e0120b0368d6c5b32b31bb371ef78597f5c131822eee3568e8307067b5e74d20
+➜  src git:(docker-3) ✗ docker run -d --network=reddit --network-alias=comment deron73/comment:1.0
+f27c933234844a4d3d7578b9f2eda7e6a231efd0232393dbcc2f1a4b5fa71666
+➜  src git:(docker-3) ✗ docker run -d --network=reddit -p 9292:9292 deron73/ui:1.0
+51640271f3861194506a649dd0d8798f0a27086de6b4b0435af3816cc0ca3b11
+➜  src git:(docker-3) ✗ docker ps
+CONTAINER ID   IMAGE                 COMMAND                  CREATED              STATUS              PORTS                                       NAMES
+51640271f386   deron73/ui:1.0        "puma"                   6 seconds ago        Up 5 seconds        0.0.0.0:9292->9292/tcp, :::9292->9292/tcp   friendly_cori
+f27c93323484   deron73/comment:1.0   "puma"                   25 seconds ago       Up 24 seconds                                                   vigorous_mclaren
+34ead3eb6bc4   mongo:latest          "docker-entrypoint.s…"   About a minute ago   Up About a minute   27017/tcp                                   optimistic_roentgen
+
+
+➜  src git:(docker-3) ✗ curl 51.250.5.113:9292 | head -9
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  1834  100  1834    0     0  63241      0 --:--:-- --:--:-- --:--:-- 63241
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta content='IE=Edge,chrome=1' http-equiv='X-UA-Compatible'>
+<meta content='width=device-width, initial-scale=1.0' name='viewport'>
+<title>Microservices Reddit :: All posts</title>
+<link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css' integrity='sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7' rel='stylesheet' type='text/css'>
+<link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css' integrity='sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r' rel='stylesheet' type='text/css'>
+
+~~~
+
+
 
 ## **Полезное:**
 
