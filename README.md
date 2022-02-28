@@ -1228,6 +1228,8 @@ docker build -t deron73/ui:1.0 ./ui
 ~~~
 
 
+Проверяем создание обрвзов. Создаем специальную сеть для приложения.
+~~~bash
 ➜  src git:(docker-3) ✗ docker images
 REPOSITORY        TAG            IMAGE ID       CREATED              SIZE
 deron73/ui        1.0            667a7b4ca6c7   15 seconds ago       772MB
@@ -1245,6 +1247,14 @@ NETWORK ID     NAME      DRIVER    SCOPE
 ce687ca5c751   host      host      local
 1de7e8f59dd4   none      null      local
 74ae6ce357a5   reddit    bridge    local
+~~~
+
+
+Создадим bridge-сеть для контейнеров, так как сетевые алиасы не работают в сети по умолчанию.
+Запустим наши контейнеры в этой сети.
+Добавим сетевые алиасы контейнерам.
+
+~~~bash
 ➜  src git:(docker-3) ✗ docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
 34ead3eb6bc4affd43763fcb0af215a46ebefe7d7c9e27cbe998f5ccac875660
 ➜  src git:(docker-3) ✗ docker run -d --network=reddit --network-alias=post deron73/post:1.0
@@ -1253,13 +1263,17 @@ e0120b0368d6c5b32b31bb371ef78597f5c131822eee3568e8307067b5e74d20
 f27c933234844a4d3d7578b9f2eda7e6a231efd0232393dbcc2f1a4b5fa71666
 ➜  src git:(docker-3) ✗ docker run -d --network=reddit -p 9292:9292 deron73/ui:1.0
 51640271f3861194506a649dd0d8798f0a27086de6b4b0435af3816cc0ca3b11
+
 ➜  src git:(docker-3) ✗ docker ps
 CONTAINER ID   IMAGE                 COMMAND                  CREATED              STATUS              PORTS                                       NAMES
 51640271f386   deron73/ui:1.0        "puma"                   6 seconds ago        Up 5 seconds        0.0.0.0:9292->9292/tcp, :::9292->9292/tcp   friendly_cori
 f27c93323484   deron73/comment:1.0   "puma"                   25 seconds ago       Up 24 seconds                                                   vigorous_mclaren
 34ead3eb6bc4   mongo:latest          "docker-entrypoint.s…"   About a minute ago   Up About a minute   27017/tcp                                   optimistic_roentgen
+~~~
 
+Проверяем
 
+~~~bash
 ➜  src git:(docker-3) ✗ curl 51.250.5.113:9292 | head -9
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
@@ -1273,7 +1287,41 @@ f27c93323484   deron73/comment:1.0   "puma"                   25 seconds ago    
 <title>Microservices Reddit :: All posts</title>
 <link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css' integrity='sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7' rel='stylesheet' type='text/css'>
 <link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css' integrity='sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r' rel='stylesheet' type='text/css'>
+~~~
 
+Задание со ⭐ (1)
+
+Остановим контейнеры:
+
+~~~bash
+docker kill $(docker ps -q)
+~~~
+
+Запустим контейнеры с другими сетевыми алиасами. Адреса для взаимодействия контейнеров зададим через ENV -
+переменные внутри Dockerfile 'овю. При запуске контейнеров ( docker run ) зададим им переменные окружения соответствующие новым сетевым алиасам, не пересоздавая образ:
+
+~~~bash
+docker run -d --network=reddit --network-alias=dpp_post_db --network-alias=dpp_comment_db mongo:latest
+docker run -d --network=reddit --network-alias=dpp_post --env POST_DATABASE_HOST=dpp_post_db deron73/post:1.0
+docker run -d --network=reddit --network-alias=dpp_comment --env COMMENT_DATABASE_HOST=dpp_comment_db  deron73/comment:1.0
+docker run -d --network=reddit -p 9292:9292 --env POST_SERVICE_HOST=dpp_post --env COMMENT_SERVICE_HOST=dpp_comment deron73/ui:1.0
+~~~
+
+Проверяем:
+~~~bash
+➜  Deron-D_microservices git:(docker-3) ✗ curl 51.250.5.113:9292 | head -9
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  1673  100  1673    0     0  36369      0 --:--:-- --:--:-- --:--:-- 36369
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta content='IE=Edge,chrome=1' http-equiv='X-UA-Compatible'>
+<meta content='width=device-width, initial-scale=1.0' name='viewport'>
+<title>Microservices Reddit :: All posts</title>
+<link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css' integrity='sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7' rel='stylesheet' type='text/css'>
+<link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css' integrity='sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r' rel='stylesheet' type='text/css'>
 ~~~
 
 
