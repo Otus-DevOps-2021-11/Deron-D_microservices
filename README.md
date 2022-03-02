@@ -1218,7 +1218,7 @@ src
 docker pull mongo:latest
 ~~~
 
-Соберем образы с нашими сервисами:
+5. Соберем образы с нашими сервисами:
 
 ~~~bash
 cd src
@@ -1228,7 +1228,7 @@ docker build -t deron73/ui:1.0 ./ui
 ~~~
 
 
-Проверяем создание обрвзов. Создаем специальную сеть для приложения.
+6. Проверяем создание обрвзов. Создаем специальную сеть для приложения.
 ~~~bash
 ➜  src git:(docker-3) ✗ docker images
 REPOSITORY        TAG            IMAGE ID       CREATED              SIZE
@@ -1250,19 +1250,15 @@ ce687ca5c751   host      host      local
 ~~~
 
 
-Создадим bridge-сеть для контейнеров, так как сетевые алиасы не работают в сети по умолчанию.
+7. Создадим bridge-сеть для контейнеров, так как сетевые алиасы не работают в сети по умолчанию.
 Запустим наши контейнеры в этой сети.
 Добавим сетевые алиасы контейнерам.
 
 ~~~bash
-➜  src git:(docker-3) ✗ docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
-34ead3eb6bc4affd43763fcb0af215a46ebefe7d7c9e27cbe998f5ccac875660
-➜  src git:(docker-3) ✗ docker run -d --network=reddit --network-alias=post deron73/post:1.0
-e0120b0368d6c5b32b31bb371ef78597f5c131822eee3568e8307067b5e74d20
-➜  src git:(docker-3) ✗ docker run -d --network=reddit --network-alias=comment deron73/comment:1.0
-f27c933234844a4d3d7578b9f2eda7e6a231efd0232393dbcc2f1a4b5fa71666
-➜  src git:(docker-3) ✗ docker run -d --network=reddit -p 9292:9292 deron73/ui:1.0
-51640271f3861194506a649dd0d8798f0a27086de6b4b0435af3816cc0ca3b11
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post deron73/post:1.0
+docker run -d --network=reddit --network-alias=comment deron73/comment:1.0
+docker run -d --network=reddit -p 9292:9292 deron73/ui:1.0
 
 ➜  src git:(docker-3) ✗ docker ps
 CONTAINER ID   IMAGE                 COMMAND                  CREATED              STATUS              PORTS                                       NAMES
@@ -1289,7 +1285,7 @@ f27c93323484   deron73/comment:1.0   "puma"                   25 seconds ago    
 <link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css' integrity='sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r' rel='stylesheet' type='text/css'>
 ~~~
 
-Задание со ⭐ (1)
+Задание со ⭐
 
 Остановим контейнеры:
 
@@ -1322,6 +1318,143 @@ docker run -d --network=reddit -p 9292:9292 --env POST_SERVICE_HOST=dpp_post --e
 <title>Microservices Reddit :: All posts</title>
 <link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css' integrity='sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7' rel='stylesheet' type='text/css'>
 <link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css' integrity='sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r' rel='stylesheet' type='text/css'>
+~~~
+
+8. Сервис ui - улучшаем образ
+~~~bash
+➜  Deron-D_microservices git:(docker-3) docker images
+REPOSITORY        TAG            IMAGE ID       CREATED        SIZE
+deron73/post      1.0            740c208a0d53   23 hours ago   121MB
+deron73/ui        1.0            667a7b4ca6c7   24 hours ago   772MB
+deron73/comment   1.0            02f4337e4dda   24 hours ago   770MB
+~~~
+
+Поменяем содержимое `./ui/Dockerfile`
+~~~Dockerfile
+FROM ubuntu:16.04
+RUN apt-get update \
+    && apt-get install -y ruby-full ruby-dev build-essential \
+    && gem install bundler --no-ri --no-rdoc
+
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+RUN bundle install
+ADD . $APP_HOME
+
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
+
+CMD ["puma"]
+~~~
+
+Пересоберем `ui`
+~~~bash
+➜  src git:(docker-3) ✗ docker build -t deron73/ui:2.0 ./ui
+Sending build context to Docker daemon  30.72kB
+Step 1/13 : FROM ubuntu:16.04
+....
+
+➜  src git:(docker-3) ✗ docker images
+REPOSITORY        TAG            IMAGE ID       CREATED          SIZE
+deron73/ui        2.0            ddb37a276d36   29 seconds ago   463MB
+deron73/post      1.0            740c208a0d53   23 hours ago     121MB
+deron73/ui        1.0            667a7b4ca6c7   24 hours ago     772MB
+deron73/comment   1.0            02f4337e4dda   24 hours ago     770MB
+~~~
+
+Запустим еще раз:
+~~~bash
+docker kill $(docker ps -q)
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post deron73/post:1.0
+docker run -d --network=reddit --network-alias=comment deron73/comment:1.0
+docker run -d --network=reddit -p 9292:9292 deron73/ui:2.0
+
+➜  Deron-D_microservices git:(docker-3) ✗ curl 51.250.5.113:9292 | head -9
+~~~
+
+Задание со ⭐
+
+Соберем образ сервиса `UI` на основе Alpine Linux. [Dockerfile](./src//ui/Dockerfile.1)
+
+~~~bash
+docker build -t deron73/ui:3.0 ./ui --file ui/Dockerfile.1
+
+➜  src git:(docker-3) ✗ docker images
+REPOSITORY        TAG            IMAGE ID       CREATED         SIZE
+deron73/ui        3.0            98406fd81821   2 minutes ago   261MB
+deron73/ui        2.0            ddb37a276d36   2 days ago      463MB
+deron73/post      1.0            740c208a0d53   2 days ago      121MB
+deron73/ui        1.0            667a7b4ca6c7   3 days ago      772MB
+deron73/comment   1.0            02f4337e4dda   3 days ago      770MB
+~~~
+
+Проверяем:
+~~~bash
+docker kill $(docker ps -q)
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post deron73/post:1.0
+docker run -d --network=reddit --network-alias=comment deron73/comment:1.0
+docker run -d --network=reddit -p 9292:9292 deron73/ui:3.0
+
+➜  src git:(docker-3) ✗ curl 51.250.5.113:9292 | head -9
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  1673  100  1673    0     0  26555      0 --:--:-- --:--:-- --:--:-- 26140
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta content='IE=Edge,chrome=1' http-equiv='X-UA-Compatible'>
+<meta content='width=device-width, initial-scale=1.0' name='viewport'>
+<title>Microservices Reddit :: All posts</title>
+<link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css' integrity='sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7' rel='stylesheet' type='text/css'>
+<link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css' integrity='sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r' rel='stylesheet' type='text/css'>
+~~~
+
+9. Запуск приложения с volume
+
+Создадим Docker volume:
+
+~~~bash
+docker volume create reddit_db
+~~~
+
+Подключим его к контейнеру с MongoDB:
+~~~bash
+docker kill $(docker ps -q)
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db -v reddit_db:/data/db mongo:latest
+~~~
+
+Перезапуск приложения с volume
+~~~bash
+docker run -d --network=reddit --network-alias=post deron73/post:1.0
+docker run -d --network=reddit --network-alias=comment deron73/comment:1.0
+docker run -d --network=reddit -p 9292:9292 deron73/ui:3.0
+~~~
+
+- Зайдем на [http://51.250.5.113:9292/](http://51.250.5.113:9292/)
+- Напишем пост
+- Перезапустим контейнеры
+~~~bash
+docker kill $(docker ps -q)
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db -v reddit_db:/data/db mongo:latest
+docker run -d --network=reddit --network-alias=post deron73/post:1.0
+docker run -d --network=reddit --network-alias=comment deron73/comment:1.0
+docker run -d --network=reddit -p 9292:9292 deron73/ui:3.0
+~~~
+
+- Проверим, что пост остался на месте
+
+10. Освободим ресурсы `завтра-завтра, не сегодня...`
+~~~bash
+docker-machine rm docker-host
+yc compute instance delete docker-host
 ~~~
 
 
