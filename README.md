@@ -1491,10 +1491,504 @@ yc compute instance delete docker-host
 - **Работа с сетями в Docker**
 - **Использование docker-compose**
 
-
 ---
 
 ## **Выполнено:**
+
+1. Поднимаем Docker хост в Yandex Cloud, аналогично предыдущим ДЗ:
+
+~~~bash
+yc compute instance create \
+  --name docker-host \
+  --zone ru-central1-a \
+  --network-interface subnet-name=docker-net-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
+  --ssh-key ~/.ssh/appuser.pub
+...
+      address: 51.250.8.36
+...
+
+~~~
+
+~~~bash
+docker-machine create \
+  --driver generic \
+  --generic-ip-address=51.250.8.36 \
+  --generic-ssh-user yc-user \
+  --generic-ssh-key ~/.ssh/appuser \
+docker-host
+~~~
+
+~~~bash
+docker-machine ls
+NAME          ACTIVE   DRIVER    STATE     URL                       SWARM   DOCKER      ERRORS
+docker-host   *        generic   Running   tcp://51.250.8.36:2376           v20.10.12
+eval $(docker-machine env docker-host)
+~~~
+
+2. Работа с сетью в Docker
+
+- none: внутри контейнера из сетевых интерфейсов существует только loopback.
+- host: контейнер доступна только сеть хоста
+- bridge: контейнеры могу взаимодействовать и выходить наружу через сеть хоста
+
+~~~bash
+docker run -ti --rm --network none joffotron/docker-net-tools -c ifconfig
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+docker run -ti --rm --network none joffotron/docker-net-tools -c 'ping -4 -c 4 127.0.0.1'
+          PING 127.0.0.1 (127.0.0.1): 56 data bytes
+          64 bytes from 127.0.0.1: seq=0 ttl=64 time=0.060 ms
+          64 bytes from 127.0.0.1: seq=1 ttl=64 time=0.053 ms
+          64 bytes from 127.0.0.1: seq=2 ttl=64 time=0.074 ms
+          64 bytes from 127.0.0.1: seq=3 ttl=64 time=0.056 ms
+
+          --- 127.0.0.1 ping statistics ---
+          4 packets transmitted, 4 packets received, 0% packet loss
+          round-trip min/avg/max = 0.053/0.060/0.074 ms
+
+docker run -ti --rm --network none joffotron/docker-net-tools -c 'ping -4 -c 4 8.8.8.8'
+          PING 8.8.8.8 (8.8.8.8): 56 data bytes
+          ping: sendto: Network unreachable
+~~~
+
+~~~bash
+docker run -ti --rm --network host joffotron/docker-net-tools -c ifconfig
+docker0   Link encap:Ethernet  HWaddr 02:42:68:25:99:12
+          inet addr:172.17.0.1  Bcast:172.17.255.255  Mask:255.255.0.0
+          UP BROADCAST MULTICAST  MTU:1500  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+eth0      Link encap:Ethernet  HWaddr D0:0D:BC:50:E6:F0
+          inet addr:10.128.0.31  Bcast:10.128.0.255  Mask:255.255.255.0
+          inet6 addr: fe80::d20d:bcff:fe50:e6f0%32603/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:11992 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:8870 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:117617495 (112.1 MiB)  TX bytes:969180 (946.4 KiB)
+
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1%32603/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:276 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:276 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:25816 (25.2 KiB)  TX bytes:25816 (25.2 KiB)
+
+➜  Deron-D_microservices git:(docker-4) ✗ docker-machine ssh docker-host ifconfig
+bash: ifconfig: command not found
+exit status 127
+
+docker-machine ssh docker-host ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether d0:0d:bc:50:e6:f0 brd ff:ff:ff:ff:ff:ff
+    inet 10.128.0.31/24 brd 10.128.0.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::d20d:bcff:fe50:e6f0/64 scope link
+       valid_lft forever preferred_lft forever
+4: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+    link/ether 02:42:68:25:99:12 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+~~~
+
+~~~bash
+docker run --network host -d nginx
+9ef47f29c9e204dc05bb59c4563148f2644ec830d629c855cb0e0020be6c8534
+
+docker run --network host -d nginx
+de7829b001ee62889ad1b20d4d8dd621c625770af06179a523ec567d729790bd
+
+docker run --network host -d nginx
+2872ece865f1800e885885064df4acda237839bd5ec57efbeb022cf1ca345d51
+
+docker ps
+CONTAINER ID   IMAGE     COMMAND                  CREATED          STATUS          PORTS     NAMES
+f92ff3fdbcb0   nginx     "/docker-entrypoint.…"   12 seconds ago   Up 10 seconds             keen_wu
+
+docker ps -a
+CONTAINER ID   IMAGE     COMMAND                  CREATED         STATUS                          PORTS     NAMES
+2872ece865f1   nginx     "/docker-entrypoint.…"   2 minutes ago   Exited (1) About a minute ago             laughing_pasteur
+de7829b001ee   nginx     "/docker-entrypoint.…"   2 minutes ago   Exited (1) About a minute ago             objective_hertz
+9ef47f29c9e2   nginx     "/docker-entrypoint.…"   2 minutes ago   Exited (1) 2 minutes ago                  epic_zhukovsky
+f92ff3fdbcb0   nginx     "/docker-entrypoint.…"   2 minutes ago   Up 2 minutes                              keen_wu
+
+docker kill $(docker ps -q)
+f92ff3fdbcb0
+~~~
+
+Как видим, работает только один контейнер. Это связано с Host Driver:
+
+- Контейнер использует network namespace хоста;
+- Сеть не управляется самим Docker;
+- Два сервиса в разных контейнерах не могут слушать один и тот же порт.
+
+Подготовим docker-host машину для просмотра net-namespaces:
+~~~bash
+docker-machine ssh docker-host
+sudo ln -s /var/run/docker/netns /var/run/netns
+~~~
+
+Теперь можно просматривать cуществующие в данный момент net-namespaces:
+~~~bash
+sudo ip netns
+default
+~~~
+
+~~~bash
+docker run --network none -d nginx
+14a57539782af72c5005dfaa31a6ec72de4bdd2b014b757e767257d6aa502938
+
+docker-machine ssh docker-host
+
+sudo ip netns
+3dbe01a083d7
+default
+
+sudo ip netns exec 3dbe01a083d7 ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+   link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+   inet 127.0.0.1/8 scope host lo
+      valid_lft forever preferred_lft forever
+
+sudo ip netns exec default ip a
+      1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+          link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+          inet 127.0.0.1/8 scope host lo
+             valid_lft forever preferred_lft forever
+          inet6 ::1/128 scope host
+             valid_lft forever preferred_lft forever
+      2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+          link/ether d0:0d:bc:50:e6:f0 brd ff:ff:ff:ff:ff:ff
+          inet 10.128.0.31/24 brd 10.128.0.255 scope global eth0
+             valid_lft forever preferred_lft forever
+          inet6 fe80::d20d:bcff:fe50:e6f0/64 scope link
+             valid_lft forever preferred_lft forever
+      4: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+          link/ether 02:42:68:25:99:12 brd ff:ff:ff:ff:ff:ff
+          inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+             valid_lft forever preferred_lft forever
+
+sudo ip a
+      1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+          link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+          inet 127.0.0.1/8 scope host lo
+             valid_lft forever preferred_lft forever
+          inet6 ::1/128 scope host
+             valid_lft forever preferred_lft forever
+      2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+          link/ether d0:0d:bc:50:e6:f0 brd ff:ff:ff:ff:ff:ff
+          inet 10.128.0.31/24 brd 10.128.0.255 scope global eth0
+             valid_lft forever preferred_lft forever
+          inet6 fe80::d20d:bcff:fe50:e6f0/64 scope link
+             valid_lft forever preferred_lft forever
+      4: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+          link/ether 02:42:68:25:99:12 brd ff:ff:ff:ff:ff:ff
+          inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+             valid_lft forever preferred_lft forever
+
+
+exit
+logout
+
+docker kill $(docker ps -q)
+14a57539782a
+~~~
+
+~~~bash
+docker run --network host -d nginx
+8ff3e085c690f38d54fabe24ef5325a2ebc03048bc91c679100eace01e1c0822
+
+docker-machine ssh docker-host
+
+yc-user@docker-host:~$ sudo ip netns
+default
+
+yc-user@docker-host:~$ sudo ip netns exec default ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether d0:0d:bc:50:e6:f0 brd ff:ff:ff:ff:ff:ff
+    inet 10.128.0.31/24 brd 10.128.0.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::d20d:bcff:fe50:e6f0/64 scope link
+       valid_lft forever preferred_lft forever
+4: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+    link/ether 02:42:68:25:99:12 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+
+yc-user@docker-host:~$ sudo ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether d0:0d:bc:50:e6:f0 brd ff:ff:ff:ff:ff:ff
+    inet 10.128.0.31/24 brd 10.128.0.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::d20d:bcff:fe50:e6f0/64 scope link
+       valid_lft forever preferred_lft forever
+4: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+    link/ether 02:42:68:25:99:12 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+yc-user@docker-host:~$ exit
+logout
+
+docker kill $(docker ps -q)
+8ff3e085c690
+~~~
+
+### Bridge network driver
+
+Создадим bridge-сеть в docker (флаг --driver указывать не обязательно, т.к. по-умолчанию используется bridge
+
+~~~bash
+docker network create reddit --driver bridge
+2fff92d8d7327d86b16fb83dd71618fdd9d40e9c241f04b2f7640948aadaeeec
+~~~
+
+Запустим наш проект reddit с использованием bridge-сети
+~~~bash
+cd src
+docker build -t deron73/post:1.0 ./post-py
+docker build -t deron73/comment:1.0 ./comment
+docker build -t deron73/ui:1.0 ./ui
+
+
+docker run -d --network=reddit mongo:latest
+docker run -d --network=reddit deron73/post:1.0
+docker run -d --network=reddit deron73/comment:1.0
+docker run -d --network=reddit -p 9292:9292 deron73/ui:1.0
+~~~
+
+При проверке работы сервиса наблюдаем ошибку:
+~~~
+Can't show blog posts, some problems with the post service. Refresh?
+~~~
+
+т.к. наши сервисы ссылаются друг на друга по dns- именам, прописанным в ENV-переменных (см Dockerfile). В текущей инсталляции встроенный DNS docker не знает ничего об этих именах.
+Решением проблемы будет присвоение контейнерам имен или сетевых алиасов при старте:
+
+~~~bash
+docker kill $(docker ps -q)
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post deron73/post:1.0
+docker run -d --network=reddit --network-alias=comment deron73/comment:1.0
+docker run -d --network=reddit -p 9292:9292 deron73/ui:1.0
+~~~
+
+
+Давайте запустим наш проект в 2-х bridge сетях. Так , чтобы сервис ui не имел 
+доступа к базе данных.
+
+Остановим старые копии контейнеров
+~~~
+docker kill $(docker ps -q)
+~~~
+
+Создадим docker-сети
+~~~bash
+docker network create back_net --subnet=10.0.2.0/24
+docker network create front_net --subnet=10.0.1.0/24
+
+docker network ls
+NETWORK ID     NAME        DRIVER    SCOPE
+972824e56bdd   back_net    bridge    local
+5db7b1642cb2   front_net   bridge    local
+...
+~~~
+
+Запустим контейнеры
+~~~bash
+docker run -d --network=front_net -p 9292:9292 --name ui deron73/ui:1.0
+docker run -d --network=back_net  --name comment deron73/comment:1.0
+docker run -d --network=back_net  --name post deron73/post:1.0
+docker run -d --network=back_net --name mongo_db --network-alias=post_db --network-alias=comment_db mongo:latest
+~~~
+
+
+Зайдем на адрес http://51.250.8.36:9292/
+~~~
+Can't show blog posts, some problems with the post service. Refresh?
+~~~
+
+Docker при инициализации контейнера может подключить к нему только 1 сеть.
+При этом контейнеры из соседних сетей не будут доступны как в DNS, так и для взаимодействия по сети. 
+Поэтому нужно поместить контейнеры post и comment в обе сети.
+
+Дополнительные сети подключаются командой:
+`docker network connect <network> <container>`
+
+Подключим контейнеры ко второй сети
+
+~~~bash
+docker network connect front_net post
+docker network connect front_net comment
+~~~
+
+Зайдем на адрес http://51.250.8.36:9292/
+Все работает.
+
+### Исследование сетевого стека контейнеров
+
+Зайдем по ssh на docker-host и установим пакет bridge-utils :
+~~~bash
+docker-machine ssh docker-host 
+sudo apt-get update && sudo apt-get install bridge-utils
+~~~
+
+Выполним:
+~~~bash
+sudo docker network ls
+NETWORK ID     NAME        DRIVER    SCOPE
+972824e56bdd   back_net    bridge    local
+5424dc67c23c   bridge      bridge    local
+5db7b1642cb2   front_net   bridge    local
+2717ef651f7f   host        host      local
+8caf88c9e435   none        null      local
+2fff92d8d732   reddit      bridge    local
+~~~
+
+Найдем bridge-интерфейсы для каждой из сетей. Просмотрим информацию о каждом.
+~~~bash
+ip link | grep br
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    link/ether d0:0d:bc:50:e6:f0 brd ff:ff:ff:ff:ff:ff
+    link/ether 02:42:68:25:99:12 brd ff:ff:ff:ff:ff:ff
+5: br-2fff92d8d732: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN mode DEFAULT group default
+    link/ether 02:42:ed:4f:6a:be brd ff:ff:ff:ff:ff:ff
+44: br-972824e56bdd: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default
+    link/ether 02:42:9b:1a:c6:5b brd ff:ff:ff:ff:ff:ff
+45: br-5db7b1642cb2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default
+    link/ether 02:42:92:4a:f7:32 brd ff:ff:ff:ff:ff:ff
+47: vethd5e71db@if46: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-5db7b1642cb2 state UP mode DEFAULT group default
+    link/ether 96:8e:0a:81:df:5a brd ff:ff:ff:ff:ff:ff link-netnsid 0
+49: veth49a3f28@if48: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-972824e56bdd state UP mode DEFAULT group default
+    link/ether 5e:0f:14:52:31:30 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+51: veth8262647@if50: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-972824e56bdd state UP mode DEFAULT group default
+    link/ether c2:75:ab:84:f8:b6 brd ff:ff:ff:ff:ff:ff link-netnsid 2
+53: veth7642c1b@if52: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-972824e56bdd state UP mode DEFAULT group default
+    link/ether b6:b2:65:b7:c4:9e brd ff:ff:ff:ff:ff:ff link-netnsid 3
+55: vethc916e10@if54: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-5db7b1642cb2 state UP mode DEFAULT group default
+    link/ether 42:5d:8d:97:0b:3d brd ff:ff:ff:ff:ff:ff link-netnsid 2
+57: vethb9bfa16@if56: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-5db7b1642cb2 state UP mode DEFAULT group default
+    link/ether 1a:f8:fe:1f:fb:c4 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+~~~
+
+Посмотрим какие интерфейсы есть в бридже
+~~~bash
+brctl show br-972824e56bdd
+bridge name	bridge id		STP enabled	interfaces
+br-972824e56bdd		8000.02429b1ac65b	no		veth49a3f28
+							veth7642c1b
+							veth8262647
+~~~
+
+Отображаемые veth-интерфейсы - это те части виртуальных пар интерфейсов (2 на схеме), которые лежат в сетевом пространстве хоста и также отображаются в ifconfig. Вторые их части лежат внутри контейнеров
+
+
+Давайте посмотрим как выглядит iptables.
+~~~bash
+sudo iptables -nL -t nat -v
+...
+Chain POSTROUTING (policy ACCEPT 3723 packets, 230K bytes)
+ pkts bytes target     prot opt in     out     source               destination
+    0     0 MASQUERADE  all  --  *      !br-5db7b1642cb2  10.0.1.0/24          0.0.0.0/0
+    0     0 MASQUERADE  all  --  *      !br-972824e56bdd  10.0.2.0/24          0.0.0.0/0
+    0     0 MASQUERADE  all  --  *      !br-2fff92d8d732  172.18.0.0/16        0.0.0.0/0
+  191 11532 MASQUERADE  all  --  *      !docker0  172.17.0.0/16        0.0.0.0/0
+    0     0 MASQUERADE  tcp  --  *      *       10.0.1.2             10.0.1.2             tcp dpt:9292
+...
+    4   256 DNAT       tcp  --  !br-5db7b1642cb2 *       0.0.0.0/0            0.0.0.0/0            tcp dpt:9292 to:10.0.1.2:9292
+~~~
+
+Запустим
+~~~bash
+ps ax | grep docker-proxy
+16625 ?        Sl     0:00 /usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 9292 -container-ip 10.0.1.2 -container-port 9292
+16631 ?        Sl     0:00 /usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 9292 -container-ip 10.0.1.2 -container-port 9292
+~~~
+Видим, что хотя бы 1 запущенный процесс docker-proxy.  Этот процесс в данный момент слушает сетевой tcp-порт 9292
+
+
+### Docker-compose
+
+Docker-compose - это инструментальное средство взаимодействия контейнеров, docker сетей, хранилищ (volume). Удобен когда:
+
+- Одно приложение состоит из множества контейнеров / сервисов
+- Один контейнер зависит от другого
+- Порядок запуска имеет значение
+- docker build/run/create
+- & etc ...
+
+Проверим, что docker-compose установлен:
+~~~bash
+src git:(docker-4) ✗ docker-compose -v
+docker-compose version 1.29.2, build 5becea4c
+~~~
+
+Остановим контейнеры, запущенные на предыдущих шагах
+~~~bash
+docker kill $(docker ps -q)
+~~~
+
+Выполните:
+~~~bash
+export USERNAME=deron73
+docker-compose up -d
+docker-compose ps
+
+docker-compose ps
+    Name                  Command             State                    Ports
+----------------------------------------------------------------------------------------------
+src_comment_1   puma                          Up
+src_post_1      python3 post_app.py           Up
+src_post_db_1   docker-entrypoint.sh mongod   Up      27017/tcp
+src_ui_1        puma                          Up      0.0.0.0:9292->9292/tcp,:::9292->9292/tcp
+~~~
+
+
+Изменим [docker-compose](./src/docker-compose.yml) под кейс с множеством сетей, сетевых алиасов с помощью
+[.env](./src/.env.example).
+
+Проверяем, дополнительно задав базовое имя проекта через ключ `-p`
+~~~
+docker-compose -p HW18 up -d
+Creating network "hw18_back_net" with the default driver
+Creating network "hw18_front_net" with the default driver
+Creating volume "hw18_post_db" with default driver
+Creating hw18_post_db_1 ... done
+Creating hw18_post_1    ... done
+Creating hw18_comment_1 ... done
+Creating hw18_ui_1      ... done
+~~~
+
+Также базовое имя проект возможно параметризовать через переменную COMPOSE_PROJECT_NAME в файле `.env`
 
 ## **Полезное:**
 
