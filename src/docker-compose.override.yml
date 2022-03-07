@@ -1,0 +1,15 @@
+version: '3.3'
+services:
+  ui:
+    volumes:
+      - /home/yc-user/reddit-microservices/ui:/app
+    command: puma --debug -w 2
+
+  post:
+    volumes:
+      - /home/yc-user/reddit-microservices/post-py:/app
+
+  comment:
+    volumes:
+      - /home/yc-user/reddit-microservices/comment:/app
+    command: puma --debug -w 2

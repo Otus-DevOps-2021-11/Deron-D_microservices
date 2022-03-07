@@ -1990,6 +1990,105 @@ Creating hw18_ui_1      ... done
 
 Также базовое имя проект возможно параметризовать через переменную COMPOSE_PROJECT_NAME в файле `.env`
 
+### Задание со ⭐
+
+Создать docker-compose.override.yml для reddit проекта, который позволит
+
+- Изменять код каждого из приложений, не выполняя сборку образа
+- Запускать puma для руби приложений в дебаг режиме с двумя воркерами (флаги --debug и -w 2)
+
+Создадим `docker-compose.override.yml` файл со следующим содержанием:
+~~~yaml
+version: '3.3'
+services:
+  ui:
+    volumes:
+      - /home/yc-user/reddit-microservices/ui:/app
+    command: puma --debug -w 2
+
+  post:
+    volumes:
+      - /home/yc-user/reddit-microservices/post-py:/app
+
+  comment:
+    volumes:
+      - /home/yc-user/reddit-microservices/comment:/app
+    command: puma --debug -w 2
+~~~
+
+Зайдем по ssh на docker-host и скачаем исходный src архив :
+~~~bash
+docker-machine ssh docker-host 
+wget -q https://github.com/express42/reddit/archive/microservices.zip
+sudo apt install unzip
+unzip microservices.zip
+exit
+~~~
+
+Проверяем:
+~~~bash
+# Переключаемся на удаленную docker машину
+eval $(docker-machine env docker-host)
+
+# Остановим ранее запущенные сервисы
+docker-compose down
+docker kill $(docker ps -q)
+
+# Запустим все сервисы
+docker-compose up -d
+
+# Проверяем успешный запуск контейнеров с нужными ключами
+ddocker-compose ps
+
+    Name                  Command             State                    Ports
+----------------------------------------------------------------------------------------------
+src_comment_1   puma --debug -w 2             Up
+src_post_1      python3 post_app.py           Up
+src_post_db_1   docker-entrypoint.sh mongod   Up      27017/tcp
+src_ui_1        puma --debug -w 2             Up      0.0.0.0:9292->9292/tcp,:::9292->9292/tcp
+
+
+docker ps
+
+CONTAINER ID   IMAGE                 COMMAND                  CREATED          STATUS          PORTS                                       NAMES
+2da5c52de18c   deron73/ui:1.0        "puma --debug -w 2"      37 minutes ago   Up 12 minutes   0.0.0.0:9292->9292/tcp, :::9292->9292/tcp   src_ui_1
+c103f766c082   deron73/post:1.0      "python3 post_app.py"    39 minutes ago   Up 12 minutes                                               src_post_1
+1bc6c2c6b969   deron73/comment:1.0   "puma --debug -w 2"      39 minutes ago   Up 12 minutes                                               src_comment_1
+f981a940b1fa   mongo:3.2             "docker-entrypoint.s…"   44 minutes ago   Up 12 minutes   27017/tcp                                   src_post_db_1
+~~~
+
+Пробуем изменить/создать файл проекта, не выполняя сборку образа:
+~~~bash
+docker-machine ssh docker-host 
+touch ~/reddit-microservices/ui/newfile
+exit
+logout
+➜  src git:(docker-4) ✗ docker-compose exec ui ls -l ../app
+total 40
+-rw-rw-r-- 1 1000 1002  237 Apr  1  2020 Gemfile
+-rw-rw-r-- 1 1000 1002 1843 Apr  1  2020 Gemfile.lock
+-rw-rw-r-- 1 1000 1002    6 Apr  1  2020 VERSION
+-rw-rw-r-- 1 1000 1002  396 Apr  1  2020 config.ru
+-rw-rw-r-- 1 1000 1002  165 Apr  1  2020 docker_build.sh
+-rw-rw-r-- 1 1000 1002 2160 Apr  1  2020 helpers.rb
+-rw-rw-r-- 1 1000 1002 1041 Apr  1  2020 middleware.rb
+-rw-rw-r-- 1 1000 1002    0 Mar  7 17:47 newfile
+-rw-rw-r-- 1 1000 1002 7159 Apr  1  2020 ui_app.rb
+drwxrwxr-x 2 1000 1002 4096 Apr  1  2020 views
+~~~
+
+Наш файл присутствует.
+Таким образом, гипотетически мы можем менять код проекта, не выполняя сборку образа.
+
+#### Освободим ресурсы `завтра-завтра, не сегодня...`
+~~~bash
+docker-compose down
+docker-machine rm docker-host
+yc compute instance delete docker-host
+~~~
+
 ## **Полезное:**
+
+[Share Compose configurations between files and projects](https://docs.docker.com/compose/extends/)
 
 </details>
