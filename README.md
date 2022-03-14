@@ -2273,7 +2273,7 @@ always -v /srv/gitlab-runner/config:/etc/gitlab-runner -v \
 После запуска раннер нужно зарегистрировать. На сервере, где работает Gitlab CI, выполните команду, подставив свои IP и токен:
 ~~~bash
 sudo docker exec -it gitlab-runner gitlab-runner register \
-    --url http://178.154.205.15/ \
+    --url http://193.32.218.205/ \
     --non-interactive \
     --locked=false \
     --name DockerRunner \
@@ -2368,6 +2368,241 @@ gem 'json'
 gem 'rack-test'
 ...
 ~~~
+
+
+Запушим код в GitLab и убедимся, что `test_unit_job` гоняет тесты:
+
+![gitlab-ci-2.png](gitlab-ci/gitlab-ci-2.png)
+
+9. Окружения
+
+- Изменим пайплайн таким образом, чтобы `deploy_job` стал определением окружения dev, на которое условно будет выкатываться каждое изменение в коде проекта.
+
+~~~yaml
+image: ruby:2.4.2
+
+stages:
+  - build
+  - test
+  - review
+
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+
+before_script:
+  - cd reddit
+  - bundle install
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_dev_job:
+  stage: review
+  script:
+    - echo 'Deploy'
+  environment:
+    name: dev
+    url: http://dev.example.com
+~~~
+
+- Проверка созданного при выкатке окружения dev
+![gitlab-ci-3.png](gitlab-ci/gitlab-ci-3.png)
+
+10. Добавление новых окружений Staging и Production
+
+Если на dev мы можем выкатывать последнюю версию кода, то к окружению production это может быть неприменимо, если, конечно, вы не стремитесь к continiuos deployment.
+Давайте определим два новых этапа: stage и production. Первый будет содержать задачу, имитирующую выкатку на окружение staging, второй - на production.
+Определим эти задачи таким образом, чтобы они запускались вручную, с помощью аргумента `when: manual`.
+
+- Добавим в `.gitlab-ci.yml` новые окружения и условия запусков для раннеров:
+
+~~~yaml
+image: ruby:2.4.2
+
+stages:
+  - build
+  - test
+  - review
+  - stage
+  - production
+
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+
+before_script:
+  - cd reddit
+  - bundle install
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_dev_job:
+  stage: review
+  script:
+    - echo 'Deploy'
+  environment:
+    name: dev
+    url: http://dev.example.com
+
+staging:
+  stage: stage
+  when: manual
+  only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:
+    name: stage
+    url: http://beta.example.com
+
+production:
+  stage: production
+  when: manual
+  only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:
+    name: production
+    url: http://example.com
+~~~
+
+- Пуш с тэгами
+Изменения без указания тэга запустят пайплайн без задач staging и production.
+Изменение, помеченное тэгом в git, запустит полный пайплайн.
+
+~~~bash
+git add .gitlab-ci.yml
+git commit -m '#4 add logout button to profile page'
+git tag 2.4.10
+git push gitlab gitlab-ci-1 --tags
+~~~
+
+![gitlab-ci-4.png](gitlab-ci/gitlab-ci-4.png)
+
+11. Динамические окружения
+
+Gitlab CI позволяет определить динамические окружения. Эта мощная функциональность позволяет вам иметь выделенный стенд для, например, каждой feature-ветки в git.
+Определяются динамические окружения с помощь переменных, доступных в `.gitlab-ci.yml`.
+Добавим ещё одну задачу. Эта задача определяет динамическое окружение для каждой ветки в репозитории, кроме ветки master.
+
+~~~yaml
+image: ruby:2.4.2
+
+stages:
+  - build
+  - test
+  - review
+  - stage
+  - production
+
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+
+before_script:
+  - cd reddit
+  - bundle install
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_dev_job:
+  stage: review
+  script:
+    - echo 'Deploy'
+  environment:
+    name: dev
+    url: http://dev.example.com
+
+branch review:
+  stage: review
+  script: echo "Deploy to $CI_ENVIRONMENT_SLUG"
+  environment:
+    name: branch/$CI_COMMIT_REF_NAME
+    url: http://$CI_ENVIRONMENT_SLUG.example.com
+  only:
+    - branches
+  except:
+    - master
+
+staging:
+  stage: stage
+  when: manual
+  only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:
+    name: stage
+    url: http://beta.example.com
+
+production:
+  stage: production
+  when: manual
+  only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:
+    name: production
+    url: http://example.com
+~~~
+
+
+~~~bash
+git add .gitlab-ci.yml
+git commit -m '#5 add changes for version 2.4.12'
+git tag 2.4.12
+git push gitlab gitlab-ci-1 --tags
+~~~
+
+- Проверка создания динамических окружений
+
+Теперь на каждую ветку в git, отличную от master, Gitlab CI будет определять новое окружение.
+
+![gitlab-ci-5.png](gitlab-ci/gitlab-ci-5.png)
 
 
 
