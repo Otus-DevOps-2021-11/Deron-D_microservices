@@ -2123,10 +2123,184 @@ yc compute instance delete docker-host
 ---
 ## **Выполнено:**
 
+1. Создаем виртуальный сервер для CI
+~~~bash
+yc compute instance create \
+  --name gitlab-ci-vm \
+  --platform standard-v2 \
+  --memory 8GB \
+  --cores 2 \
+  --core-fraction 100 \
+  --preemptible \
+  --zone ru-central1-a \
+  --network-interface subnet-name=docker-net-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=30 \
+  --ssh-key ~/.ssh/appuser.pub
+~~~
 
+2. Разворачиваем GitLab
+~~~bash
+cd gitlab-ci/ansible
+ansible-playbook playbook.yml
+~~~
+
+3. Проверяем доступность (подождав около 3-5 минут после завершения плейбука по развертыванию) по адресу [http://178.154.205.15](http://178.154.205.15):
+
+~~~bash
+yc compute instance list
++----------------------+--------------+---------------+---------+----------------+-------------+
+|          ID          |     NAME     |    ZONE ID    | STATUS  |  EXTERNAL IP   | INTERNAL IP |
++----------------------+--------------+---------------+---------+----------------+-------------+
+| fhmfm0qsa1m8687f4n7t | gitlab-ci-vm | ru-central1-a | RUNNING | 178.154.205.15 | 10.128.0.9  |
++----------------------+--------------+---------------+---------+----------------+-------------+
+
+➜  ansible git:(gitlab-ci-1) ✗ ssh yc-user@178.154.205.15 -i ~/.ssh/appuser
+Welcome to Ubuntu 18.04.6 LTS (GNU/Linux 4.15.0-112-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+New release '20.04.4 LTS' available.
+Run 'do-release-upgrade' to upgrade to it.
+
+Last login: Sun Mar 13 17:08:13 2022 from 82.194.224.170
+yc-user@fhmfm0qsa1m8687f4n7t:~$ sudo -s
+root@fhmfm0qsa1m8687f4n7t:~# cat /srv/gitlab/config/initial_root_password
+# WARNING: This value is valid only in the following conditions
+#          1. If provided manually (either via `GITLAB_ROOT_PASSWORD` environment variable or via `gitlab_rails['initial_root_password']` setting in `gitlab.rb`, it was provided before database was seeded for the first time (usually, the first reconfigure run).
+#          2. Password hasn't been changed manually, either via UI or via command line.
+#
+#          If the password shown here doesn't work, you must reset the admin password following https://docs.gitlab.com/ee/security/reset_user_password.html#reset-your-root-password.
+
+Password: cjUhm09YLLbyo3lT9EZoxVJSMxNR4AegQ6fKWgip7f4=
+
+# NOTE: This file will be automatically deleted in the first reconfigure run after 24 hours.
+~~~
+
+
+4. Выполняем настройку GitLab CI
+
+- Отключение регистрации новых пользователей через `Settings -> General -> Sign-up restrictions`
+~~~
+[] Sign-up enabled
+~~~
+
+-  Создание группы
+Перейдем в соответствующую панель и создадим группу:
+~~~
+Name - homework
+Description - Projects for my homework
+Visibility - private
+~~~
+
+- Создадим проект с именем 'example'
+
+5. Добавление remote
+
+Чтобы использовать репозиторий проекта GitLab, добавим ещё один remote к своему локальному репозиторию
+~~~bash
+➜  ansible git:(gitlab-ci-1) ✗ git remote add gitlab http://178.154.205.15/homework/example.git
+➜  ansible git:(gitlab-ci-1) ✗ git push gitlab gitlab-ci-1
+Username for 'http://178.154.205.15': root
+Password for 'http://root@178.154.205.15':
+Перечисление объектов: 150, готово.
+Подсчет объектов: 100% (150/150), готово.
+При сжатии изменений используется до 12 потоков
+Сжатие объектов: 100% (143/143), готово.
+Запись объектов: 100% (150/150), 52.55 KiB | 8.76 MiB/s, готово.
+Total 150 (delta 55), reused 4 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (55/55), done.
+remote:
+remote: To create a merge request for gitlab-ci-1, visit:
+remote:   http://178.154.205.15/homework/example/-/merge_requests/new?merge_request%5Bsource_branch%5D=gitlab-ci-1
+remote:
+To http://178.154.205.15/homework/example.git
+ * [new branch]      gitlab-ci-1 -> gitlab-ci-1
+~~~
+
+6. Определение CI/CD Pipeline
+
+- Пайплайн для GitLab определяется в файле .gitlab-ci.yml. Создадим его в корне репозитория:
+
+~~~yaml
+stages:
+  - build
+  - test
+  - deploy
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  script:
+    - echo 'Testing 1'
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo 'Deploy'
+~~~
+
+-  Запушим изменения
+~~~bash
+git add .gitlab-ci.yml
+git commit -m 'add pipeline definition'
+git push gitlab gitlab-ci-1
+~~~
+
+7. Создание и регистрация раннера.
+
+- Для регистрации нужен токен. Увидеть его можно в настройках проекта:`Settings -> CI/CD -> Pipelines -> Runners` и посмотреть на секцию `Set up a specific Runner manual`
+
+- Добавление раннера
+~~~bash
+ssh yc-user@178.154.205.15 -i ~/.ssh/appuser
+sudo docker run -d --name gitlab-runner --restart \
+always -v /srv/gitlab-runner/config:/etc/gitlab-runner -v \
+/var/run/docker.sock:/var/run/docker.sock gitlab/gitlab-runner:latest
+~~~
+
+- Регистрация раннера
+
+После запуска раннер нужно зарегистрировать. На сервере, где работает Gitlab CI, выполните команду, подставив свои IP и токен:
+~~~bash
+sudo docker exec -it gitlab-runner gitlab-runner register \
+    --url http://178.154.205.15/ \
+    --non-interactive \
+    --locked=false \
+    --name DockerRunner \
+    --executor docker \
+    --docker-image alpine:latest \
+    --registration-token GR1348941wb5nuchvVjY1yYb3LEyF \
+    --tag-list "linux,xenial,ubuntu,docker" \
+    --run-untagged
+
+    Runtime platform                                    arch=amd64 os=linux pid=28 revision=c6e7e194 version=14.8.2
+    Running in system-mode.
+
+    Registering runner... succeeded                     runner=GR134894
+    Runner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded!
+~~~
+
+Опции и их значения для регистрации раннера можно подсмотреть так:
+~~~bash
+sudo docker exec -it gitlab-runner gitlab-runner register --help
+~~~
+
+- Проверка раннера и паплайна
+
+![gitlab-ci-1.png](gitlab-ci/gitlab-ci-1.png)
 
 
 ## **Полезное:**
-
+- [GitLab Docker images](https://docs.gitlab.com/ee/install/docker.html)
 
 </details>
