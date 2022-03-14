@@ -2299,6 +2299,77 @@ sudo docker exec -it gitlab-runner gitlab-runner register --help
 
 ![gitlab-ci-1.png](gitlab-ci/gitlab-ci-1.png)
 
+8. Добавим Reddit в проект
+
+~~~bash
+git clone https://github.com/express42/reddit.git && rm -rf ./reddit/.git
+git add reddit/
+git commit -m "Add reddit app"
+git push gitlab gitlab-ci-1
+~~~
+
+9. Тесты в пайплайне
+
+- Изменим описание пайплайна в .gitlab-ci.yml:
+
+~~~yaml
+image: ruby:2.4.2
+stages:
+...
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+before_script:
+ - cd reddit
+ - bundle install
+...
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+...
+~~~
+
+- Создадим файл тестов `reddit/simpletest.rb`:
+
+~~~ruby
+require_relative './app'
+require 'test/unit'
+require 'rack/test'
+
+set :environment, :test
+
+class MyAppTest < Test::Unit::TestCase
+  include Rack::Test::Methods
+
+  def app
+    Sinatra::Application
+  end
+
+  def test_get_request
+    get '/'
+    assert last_response.ok?
+  end
+end
+~~~
+
+- Последним шагом нам нужно добавить библиотеку rack-test для тестирования в файл `reddit/Gemfile`:
+
+~~~ruby
+...
+gem 'sinatra', '~> 2.0.1'
+gem 'haml'
+gem 'bson_ext'
+gem 'bcrypt'
+gem 'puma'
+gem 'mongo'
+gem 'json'
+gem 'rack-test'
+...
+~~~
+
+
 
 ## **Полезное:**
 - [GitLab Docker images](https://docs.gitlab.com/ee/install/docker.html)
