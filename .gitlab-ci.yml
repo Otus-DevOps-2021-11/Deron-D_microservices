@@ -53,3 +53,10 @@ staging:
 production:
   stage: production
   when: manual
+  only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:
+    name: production
+    url: http://example.com
