@@ -1,6 +1,6 @@
 ---
 # tasks file for roles/gitlab-run
-- name: Start container
+- name: Start container gitlab-ce
   docker_container:
     name: web
     image: 'gitlab/gitlab-ce:latest'
