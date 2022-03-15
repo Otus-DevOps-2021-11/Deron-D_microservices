@@ -2609,7 +2609,30 @@ git push gitlab gitlab-ci-1 --tags
 
 ### Задание со ⭐
 
-12. Настройка оповещений в Slack (по желанию)
+12. Автоматизация развёртывания GitLab Runner
+
+~~~bash
+cd gitlab-ci/ansible
+ansible-playbook playbook-runners.yml
+[WARNING]: Invalid characters were found in group names but not replaced, use -vvvv to see details
+[WARNING]: Found both group and host with same name: gitlab-ci-vm
+
+PLAY [Deploy & Configure GitLab-CI runners] *****************************************************************************************************************
+
+TASK [Gathering Facts] **************************************************************************************************************************************
+ok: [gitlab-ci-vm]
+
+TASK [gitlab-runners-deploy : Start container gitlab-runner] ************************************************************************************************
+ok: [gitlab-ci-vm]
+
+TASK [gitlab-runners-configure : Configure gitlab-runner] ***************************************************************************************************
+changed: [gitlab-ci-vm]
+
+PLAY RECAP **************************************************************************************************************************************************
+gitlab-ci-vm               : ok=3    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+~~~
+
+13. Настройка оповещений в Slack (по желанию)
 
 Настроим интеграцию вашего пайплайна с тестовым Slack-чатом, который мы использовали ранее.
 Для этого перейдем в `Settings -> Integrations -> Slack notification`.
