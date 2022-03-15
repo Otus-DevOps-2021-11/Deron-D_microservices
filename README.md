@@ -2138,7 +2138,10 @@ yc compute instance create \
   --ssh-key ~/.ssh/appuser.pub
 ~~~
 
-2. Разворачиваем GitLab
+2. Разворачиваем GitLab помощью ansible ролей
+
+### Задание со ⭐
+
 ~~~bash
 cd gitlab-ci/ansible
 ansible-playbook playbook.yml
@@ -2604,7 +2607,16 @@ git push gitlab gitlab-ci-1 --tags
 
 ![gitlab-ci-5.png](gitlab-ci/gitlab-ci-5.png)
 
+### Задание со ⭐
 
+12. Настройка оповещений в Slack (по желанию)
+
+Настроим интеграцию вашего пайплайна с тестовым Slack-чатом, который мы использовали ранее.
+Для этого перейдем в `Settings -> Integrations -> Slack notification`.
+Нужно включить эту интеграцию, выбрать события и заполнить поля с URL вашего Slack webhook.
+Добавим ссылку на канал в слаке, в котором можно проверить работу оповещений, в файл README.md.
+
+[Channel ID:C037903MQUC](https://devops-team-otus.slack.com/archives/C037903MQUC)
 
 ## **Полезное:**
 - [GitLab Docker images](https://docs.gitlab.com/ee/install/docker.html)
