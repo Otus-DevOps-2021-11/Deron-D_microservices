@@ -1,0 +1,19 @@
+---
+# defaults file for roles/docker-install
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - software-properties-common
+  - gnupg
+  - lsb-release
+  - software-properties-common
+  - python3-pip
+  - virtualenv
+  - python3-setuptools
+
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-compose

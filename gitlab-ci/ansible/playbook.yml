@@ -1,0 +1,8 @@
+- name: Configure GitLab-CI
+  hosts: gitlab-ci-vm
+  become: true
+
+  roles:
+    - docker-install
+    - gitlab-init
+    - gitlab-run

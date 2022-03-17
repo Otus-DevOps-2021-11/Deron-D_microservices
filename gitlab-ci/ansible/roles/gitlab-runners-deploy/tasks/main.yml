@@ -1,0 +1,12 @@
+---
+# tasks file for roles/gitlab-runners-deploy
+# tasks file for roles/gitlab-run
+- name: Start container gitlab-runner
+  docker_container:
+    name: gitlab-runner
+    image: 'gitlab/gitlab-runner:latest'
+    restart_policy: always
+    hostname: 'localhost'
+    volumes:
+      - /srv/gitlab-runner/config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock

@@ -1,0 +1,16 @@
+---
+# tasks file for roles/gitlab-runners-configure
+- name: Configure gitlab-runner executor - DockerRunner
+  shell: |
+    docker exec -it gitlab-runner gitlab-runner register \
+      --url http://{{ ansible_host }}/ \
+      --non-interactive \
+      --locked=false \
+      --name DockerRunner \
+      --executor docker \
+      --docker-image alpine:latest \
+      --registration-token {{ token }} \
+      --tag-list "linux,xenial,ubuntu,docker" \
+      --run-untagged
+  args:
+    warn: yes

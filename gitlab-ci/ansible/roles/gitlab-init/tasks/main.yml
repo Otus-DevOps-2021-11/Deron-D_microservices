@@ -1,0 +1,13 @@
+---
+- name: Create required directory
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0775
+  with_items:
+    - "{{ gitlab_dirs }}"
+
+# - name: Template a docker-compose.yml
+#   template:
+#     src: docker-compose.yml.j2
+#     dest: /srv/gitlab/docker-compose.yml
