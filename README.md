@@ -2646,5 +2646,45 @@ gitlab-ci-vm               : ok=3    changed=1    unreachable=0    failed=0    s
 
 </details>
 
+# **Лекция №22: Введение в мониторинг. Модели и принципы работы систем мониторинга**
+> _monitoring-1_
+<details>
+  <summary>Создание и запуск системы мониторинга Prometheus.</summary>
 
-### Задание со ⭐
+## **Задание:**
+Цель:
+В данном дз студент познакомится с инструментов мониторинга Prometheus. Произведет его настройку и настройку exporters.
+В данном задании тренируются навыки: создания системы мониторинга на базе Prometheus.
+
+Описание/Пошаговая инструкция выполнения домашнего задания:
+Мониторинг состояния микросервисов, сбор метрик при помощи prometheus exporters.
+Все действия описаны в методическом указании.
+
+Критерии оценки:
+0 б. - задание не выполнено
+1 б. - задание выполнено
+2 б. - выполнены все дополнительные задания
+
+## **План**
+- **Prometheus: запуск, конфигурация, знакомство с Web UI**
+- **Мониторинг состояния микросервисов**
+- **Сбор метрик хоста с использованием экспортера**
+- **Задание со ⭐**
+
+---
+## **Выполнено:**
+
+1. Создаем виртуальный сервер для CI
+~~~bash
+yc compute instance create \
+  --name gitlab-ci-vm \
+  --platform standard-v2 \
+  --memory 8GB \
+  --cores 2 \
+  --core-fraction 100 \
+  --preemptible \
+  --zone ru-central1-a \
+  --network-interface subnet-name=docker-net-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=30 \
+  --ssh-key ~/.ssh/appuser.pub
+~~~
