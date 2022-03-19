@@ -2815,17 +2815,122 @@ volumes:
   prometheus_data:
 ~~~
 
+7. Мониторинг состояния микросервисов
+
+- Список endpoint-ов
+![prometheus-5.png](monitoring/prometheus-5.png)
+
+- Состояние сервиса UI
+![prometheus-6.png](monitoring/prometheus-6.png)
+
+- Остановим post сервис и проверим, как изменится статус ui сервиса, который зависим от post.
+
+~~~bash
+docker-compose stop post
+Stopping docker_post_1 ... done
+~~~
+
+- Обновим наш график
+![prometheus-7.png](monitoring/prometheus-7.png)
+![prometheus-8.png](monitoring/prometheus-8.png)
+
+- Поиск проблемы
+![prometheus-9.png](monitoring/prometheus-9.png)
+![prometheus-12.png](monitoring/prometheus-12.png)
+![prometheus-11.png](monitoring/prometheus-11.png)
+
+- Чиним
+
+~~~bash
+docker-compose start post
+Starting post ... done
+~~~
+
+![prometheus-13.png](monitoring/prometheus-13.png)
+![prometheus-14.png](monitoring/prometheus-14.png)
+
+8. Сбор метрик хоста
+
+- Node exporter
+Воспользуемся Node экспортер для сбора информации о работе Docker хоста и представлению этой информации в Prometheus.
+
+Определим ещё один сервиc в `docker/docker-compose.yml` файле
+
+~~~yaml
+services:
+
+  node-exporter:
+    image: prom/node-exporter:v0.15.2
+    user: root
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+    networks:
+      - front_net
+      - back_net
+...
+~~~
+
+- Добавим еще один job в `prometheus.yml`:
+
+~~~yaml
+scrape_configsL
+  ...
+  - job_name: 'node'
+    static_configs:
+      - targets:
+        - 'node-exporter:9100'
+~~~
+
+- Пересоберем образ
+
+~~~bash
+monitoring/prometheus $ docker build -t $USER_NAME/prometheus:1.1 .
+~~~
+
+- Пересоздадим наши сервисы
+
+~~~bash
+docker-compose down
+docker-compose up -d
+~~~
+
+- Получим информацию об использовании CPU
+
+![prometheus-15.png](monitoring/prometheus-15.png)
+
+**Проверим мониторинг**
+
+- Зайдем на хост: `docker-machine ssh docker-host`
+- Добавим нагрузки: `yes > /dev/null`
+
+
+![prometheus-16.png](monitoring/prometheus-16.png)
+
+9. Запушим собранные образы на DockerHub:
+
 ~~~bash
 docker tag $USER_NAME/comment $USER_NAME/comment:1.0
 docker tag $USER_NAME/ui $USER_NAME/ui:1.0
 docker tag $USER_NAME/post $USER_NAME/post:1.0
-docker tag $USER_NAME/prometheus $USER_NAME/prometheus:1.1
+docker tag $USER_NAME/prometheus $USER_NAME/prometheus:1.0
 docker login
 docker push $USER_NAME/comment:1.0
 docker push $USER_NAME/ui:1.0
 docker push $USER_NAME/post:1.0
-docker push $USER_NAME/prometheus:1.1
+docker push $USER_NAME/prometheus:1.0
 docker-compose -f docker-compose.yml up -d
 ~~~
 
-[https://hub.docker.com/u/deron73](https://hub.docker.com/u/deron73)
+> Cсылка на докер хаб с нашими образами [https://hub.docker.com/u/deron73](https://hub.docker.com/u/deron73)
+
+### Задание со ⭐
+
+## **Полезное:**
+
+</details>
