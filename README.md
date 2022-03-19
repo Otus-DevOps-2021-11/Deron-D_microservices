@@ -2645,3 +2645,6 @@ gitlab-ci-vm               : ok=3    changed=1    unreachable=0    failed=0    s
 - [GitLab Docker images](https://docs.gitlab.com/ee/install/docker.html)
 
 </details>
+
+
+### Задание со ⭐
