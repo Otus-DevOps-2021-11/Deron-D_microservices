@@ -2674,17 +2674,72 @@ gitlab-ci-vm               : ok=3    changed=1    unreachable=0    failed=0    s
 ---
 ## **Выполнено:**
 
-1. Создаем виртуальный сервер для CI
+1. Создадим Docker хост в Yandex Cloud и настроим локальное окружение на работу с ним
+
 ~~~bash
 yc compute instance create \
-  --name gitlab-ci-vm \
-  --platform standard-v2 \
-  --memory 8GB \
-  --cores 2 \
-  --core-fraction 100 \
-  --preemptible \
+  --name docker-host \
   --zone ru-central1-a \
   --network-interface subnet-name=docker-net-ru-central1-a,nat-ip-version=ipv4 \
-  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=30 \
-  --ssh-key ~/.ssh/appuser.pub
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
+  --ssh-key ~/.ssh/id_rsa.pub
+...
+      address: 178.154.200.254
+...
+
+docker-machine create \
+  --driver generic \
+  --generic-ip-address=178.154.200.254 \
+  --generic-ssh-user yc-user \
+  --generic-ssh-key ~/.ssh/id_rsa \
+docker-host
+
+eval $(docker-machine env docker-host)
+~~~
+
+2. Запуск Prometheus
+
+~~~bash
+➜  Deron-D_microservices git:(monitoring-1) ✗ docker run --rm -p 9090:9090 -d --name prometheus  prom/prometheus
+129f6f1333143d743211b3577cb1e76a3d15431919c1f12dd9cd48f77922b37e
+➜  Deron-D_microservices git:(monitoring-1) ✗ docker ps
+CONTAINER ID   IMAGE             COMMAND                  CREATED         STATUS         PORTS                                       NAMES
+129f6f133314   prom/prometheus   "/bin/prometheus --c…"   7 seconds ago   Up 4 seconds   0.0.0.0:9090->9090/tcp, :::9090->9090/tcp   prometheus
+~~~
+
+Откроем веб интерфейс [http://178.154.200.254:9090/](http://178.154.200.254:9090/)
+
+> IP адрес созданной VM можно узнать используя команду: `docker-machine ip docker-host`
+
+![prometheus-1.png](monitoring/prometheus-1.png)
+
+Выполним запрос:
+
+![prometheus-2.png](monitoring/prometheus-2.png)
+
+Поясним результат вывода:
+~~~json
+prometheus_build_info{branch="HEAD", goversion="go1.17.8", instance="localhost:9090", job="prometheus", revision="881111fec4332c33094a6fb2680c71fffc427275", version="2.34.0"}
+1
+~~~
+
+**prometheus_build_info** - название метрики. Идентификатор собранной информации.
+**branch, goversion, instance, job, revision, version** - лейблы. Добавляют метаданные метрике, уточняя её. Использование лейблов дает нам возможность не ограничиваться лишь одним названием метрик для идентификации получаемой информации. Лейблы содержатся в {} скобках и представлены наборами "ключ=значение".
+**1** - значение метрики. Численное значение метрики, либо NaN, если значение недоступно.
+
+➜  Deron-D_microservices git:(monitoring-1) ✗ docker-machine ip docker-host
+
+3. Targets
+Targets (цели) - представляют собой системы или процессы, за которыми следит Prometheus. Prometheus является pull системой, поэтому он постоянно делает HTTP запросы на имеющиеся у него адреса (endpoints). Посмотрим текущий список целей
+
+![prometheus-3.png](monitoring/prometheus-3.png)
+
+В веб интерфейсе мы можем видеть состояние каждого endpoint-a (up); лейбл (instance="someURL"), который Prometheus автоматически добавляет к каждой метрике, прошедшее с момента последней операции сбора информации с endpoint-a.
+Также здесь отображаются ошибки при их наличии и можно отфильтровать только неживые таргеты.
+
+![prometheus-4.png](monitoring/prometheus-4.png)
+
+Остановим контейнер
+~~~bash
+docker stop prometheus
 ~~~
