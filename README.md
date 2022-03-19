@@ -2727,8 +2727,6 @@ prometheus_build_info{branch="HEAD", goversion="go1.17.8", instance="localhost:9
 **branch, goversion, instance, job, revision, version** - лейблы. Добавляют метаданные метрике, уточняя её. Использование лейблов дает нам возможность не ограничиваться лишь одним названием метрик для идентификации получаемой информации. Лейблы содержатся в {} скобках и представлены наборами "ключ=значение".
 **1** - значение метрики. Численное значение метрики, либо NaN, если значение недоступно.
 
-➜  Deron-D_microservices git:(monitoring-1) ✗ docker-machine ip docker-host
-
 3. Targets
 Targets (цели) - представляют собой системы или процессы, за которыми следит Prometheus. Prometheus является pull системой, поэтому он постоянно делает HTTP запросы на имеющиеся у него адреса (endpoints). Посмотрим текущий список целей
 
@@ -2743,3 +2741,91 @@ Targets (цели) - представляют собой системы или �
 ~~~bash
 docker stop prometheus
 ~~~
+
+4. Создание Docker образа
+
+- Создадим `monitoring/prometheus/Dockerfile`
+
+~~~Dockerfile
+FROM prom/prometheus:v2.1.0
+ADD prometheus.yml /etc/prometheus/
+~~~
+
+- Создадим фвйл конфигурации `monitoring/prometheus/Dockerfile`
+
+~~~yaml
+---
+global:
+  scrape_interval: '5s'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+        - 'localhost:9090'
+
+  - job_name: 'ui'
+    static_configs:
+      - targets:
+        - 'ui:9292'
+
+  - job_name: 'comment'
+    static_configs:
+      - targets:
+        - 'comment:9292'
+~~~
+
+- Соберем образ
+
+~~~bash
+export USER_NAME=deron73
+$ docker build -t $USERNAME/prometheus .
+
+➜  prometheus git:(monitoring-1) ✗ docker images
+REPOSITORY           TAG       IMAGE ID       CREATED          SIZE
+deron73/prometheus   latest    22a395b9d326   12 seconds ago   112MB
+prom/prometheus      latest    e3cf894a63f5   4 days ago       205MB
+prom/prometheus      v2.1.0    c8ecf7c719c1   4 years ago      112MB
+~~~
+
+5. Соберем images из корня репозитория
+
+~~~bash
+for i in ui post-py comment; do cd src/$i; bash docker_build.sh; cd -; done
+~~~
+
+6. Поднимем Prometheus совместно с микросервисами. Для этого определим в `docker/docker-compose.yml` файле новый сервис.
+
+~~~yaml
+prometheus:
+  image: ${USER_NAME}/prometheus
+  ports:
+    - '9090:9090'
+  volumes:
+    - prometheus_data:/prometheus
+  command: # Передаем доп параметры в командной строке
+    - '--config.file=/etc/prometheus/prometheus.yml'
+    - '--storage.tsdb.path=/prometheus'
+    - '--storage.tsdb.retention=1d' # Задаем время хранения метрик в 1 день
+  networks:
+    - front_net
+    - back_net   
+...
+volumes:
+  prometheus_data:
+~~~
+
+~~~bash
+docker tag $USER_NAME/comment $USER_NAME/comment:1.0
+docker tag $USER_NAME/ui $USER_NAME/ui:1.0
+docker tag $USER_NAME/post $USER_NAME/post:1.0
+docker tag $USER_NAME/prometheus $USER_NAME/prometheus:1.1
+docker login
+docker push $USER_NAME/comment:1.0
+docker push $USER_NAME/ui:1.0
+docker push $USER_NAME/post:1.0
+docker push $USER_NAME/prometheus:1.1
+docker-compose -f docker-compose.yml up -d
+~~~
+
+[https://hub.docker.com/u/deron73](https://hub.docker.com/u/deron73)
