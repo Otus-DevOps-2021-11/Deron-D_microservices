@@ -3062,3 +3062,59 @@ docker-compose -f docker-compose.yml up -d
 [Prometheus: мониторинг HTTP через Blackbox экспортер](https://habr.com/ru/company/otus/blog/500448/)
 
 </details>
+
+
+# **Лекция №25: Применение системы логирования в инфраструктуре на основе Docker**
+> _logging-1_
+<details>
+  <summary>Логирование и распределенная трассировка.</summary>
+
+## **Задание:**
+Логирование приложений.
+
+Цель:
+В данном дз студент научится структурирование неструктурированные логи. Продолжит создавать централизованную систему логирования.
+В данном задании тренируются навыки: обрабатывать логи, строить систему централизованного логирования.
+
+Описание/Пошаговая инструкция выполнения домашнего задания:
+Все действия описаны в методическом указании
+
+## **План**
+- **Подготовка окружения**
+- **Логирование Docker-контейнеров**
+- **Сбор неструктурированных логов**
+- **Визуализация логов**
+- **Сбор структурированных логов**
+- **Распределенный трейсинг**
+
+---
+## **Выполнено:**
+
+1. Создадим Docker хост в Yandex Cloud и настроим локальное окружение на работу с ним
+
+~~~bash
+yc compute instance create \
+  --name docker-host \
+  --zone ru-central1-a \
+  --network-interface subnet-name=docker-net-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
+  --ssh-key ~/.ssh/id_rsa.pub
+...
+      address: 178.154.200.254
+...
+
+docker-machine create \
+  --driver generic \
+  --generic-ip-address=178.154.200.254 \
+  --generic-ssh-user yc-user \
+  --generic-ssh-key ~/.ssh/id_rsa \
+docker-host
+
+eval $(docker-machine env docker-host)
+~~~
+
+## **Полезное:**
+
+[Prometheus: мониторинг HTTP через Blackbox экспортер](https://habr.com/ru/company/otus/blog/500448/)
+
+</details>
