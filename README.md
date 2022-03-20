@@ -3099,6 +3099,10 @@ cd src
 git clone https://github.com/express42/reddit.git -b logging
 mv reddit/* .
 rm -rf reddit
+➜  Deron-D_microservices git:(logging-1) ✗ git restore src/comment/Dockerfile
+➜  Deron-D_microservices git:(logging-1) ✗ git restore src/post-py/Dockerfile
+➜  Deron-D_microservices git:(logging-1) ✗ git restore  src/ui/Dockerfile
+➜  Deron-D_microservices git:(logging-1) ✗ git restore  src/ui/Dockerfile.1
 ~~~
 
 
