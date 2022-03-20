@@ -3090,6 +3090,18 @@ docker-compose -f docker-compose.yml up -d
 ---
 ## **Выполнено:**
 
+1. Cкачивание новой ветки reddit
+
+~~~bash
+rm -rf src
+mkdir src
+cd src
+git clone https://github.com/express42/reddit.git -b logging
+mv reddit/* .
+rm -rf reddit
+~~~
+
+
 1. Создадим Docker хост в Yandex Cloud и настроим локальное окружение на работу с ним
 
 ~~~bash
