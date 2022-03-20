@@ -3105,32 +3105,191 @@ rm -rf reddit
 ➜  Deron-D_microservices git:(logging-1) ✗ git restore  src/ui/Dockerfile.1
 ~~~
 
-
-1. Создадим Docker хост в Yandex Cloud и настроим локальное окружение на работу с ним
+2. Создадим хост в Yandex Cloud и настроим локальное окружение на работу с ним
 
 ~~~bash
 yc compute instance create \
-  --name docker-host \
+  --name logging \
+  --memory=4 \
   --zone ru-central1-a \
-  --network-interface subnet-name=docker-net-ru-central1-a,nat-ip-version=ipv4 \
+  --network-interface subnet-name=default-ru-central1-a,nat-ip-version=ipv4 \
   --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
   --ssh-key ~/.ssh/id_rsa.pub
 ...
-      address: 178.154.200.254
+      address: 178.154.227.85
 ...
 
 docker-machine create \
   --driver generic \
-  --generic-ip-address=178.154.200.254 \
+  --generic-ip-address=178.154.227.85 \
   --generic-ssh-user yc-user \
   --generic-ssh-key ~/.ssh/id_rsa \
-docker-host
+  logging
 
-eval $(docker-machine env docker-host)
+eval $(docker-machine env logging)
 ~~~
+
+3. Сборка образов с новыми тэгами
+
+~~~bash
+export USER_NAME='deron73'
+
+cd ./src/ui && bash docker_build.sh && docker push $USER_NAME/ui:logging
+cd ../post-py && bash docker_build.sh && docker push $USER_NAME/post:logging
+cd ../comment && bash docker_build.sh && docker push $USER_NAME/comment:logging
+~~~
+
+4. Elastic Stack
+
+Как упоминалось на лекции, хранить все логи стоит **централизованно**: на одном (нескольких) серверах. В этом ДЗ мы рассмотрим пример системы централизованного логирования на примере Elastic-стека (ранее известного как ELK), который включает в себя 3 основных компонента:
+- ElasticSearch (TSDB и поисковый движок для хранения данных)
+- Logstash (для аггрегации и трансформации данных)
+- Kibana (для визуализации)
+
+Однако для аггрегации логов вместо Logstash мы будем использовать Fluentd, таким образом, получая еще одно популярное сочетание этих инструментов, получившее название EFK.
+
+- Создадим отдельный compose-файл для нашей системы логирования 'docker/docker-compose-logging.yml':
+
+~~~yaml
+version: '3'
+services:
+  fluentd:
+    image: ${USERNAME}/fluentd
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+
+  elasticsearch:
+    image: elasticsearch:7.4.0
+    environment:
+      - ELASTIC_CLUSTER=false
+      - CLUSTER_NODE_MASTER=true
+      - CLUSTER_MASTER_NODE_NAME=es01
+      - discovery.type=single-node
+    expose:
+      - 9200
+    ports:
+      - "9200:9200"
+
+  kibana:
+    image: kibana:7.4.0
+    ports:
+      - "5601:5601"
+~~~
+
+- Создадим Dockerfile для Fluentd в директории `logging/fluentd`
+
+~~~Dockerfile
+FROM fluent/fluentd:v0.12
+RUN gem install fluent-plugin-elasticsearch --no-rdoc --no-ri --version 1.9.5
+RUN gem install fluent-plugin-grok-parser --no-rdoc --no-ri --version 1.0.0
+ADD fluent.conf /fluentd/etc
+~~~
+
+и файл конфигурации `logging/fluentd/fluent.conf`:
+~~~
+<source>
+  @type forward
+  port 24224
+  bind 0.0.0.0
+</source>
+
+<match *.**>
+  @type copy
+  <store>
+    @type elasticsearch
+    host elasticsearch
+    port 9200
+    logstash_format true
+    logstash_prefix fluentd
+    logstash_dateformat %Y%m%d
+    include_tag_key true
+    type_name access_log
+    tag_key @log_name
+    flush_interval 1s
+  </store>
+  <store>
+    @type stdout
+  </store>
+</match>
+~~~
+
+- Сборка образа Fluentd
+
+~~~bash
+cd logging/fluentd
+docker build -t $USER_NAME/fluentd .
+~~~
+
+5. Cбор структурированных логов
+
+**Структурированные логи**
+Логи должны иметь заданную (единую) структуру и содержать необходимую для нормальной эксплуатации данного сервиса информацию о его работе.
+Лог-сообщения также должны иметь понятный для выбранной системы логирования формат, чтобы избежать ненужной траты ресурсов на преобразование данных в нужный вид. Структурированные логи мы рассмотрим на примере сервиса `post`.
+
+Скорректируем файл `docker-compose.yml` так, чтобы брались образы с тэгом `logging`.
+
+- Запустим сервисы приложения:
+
+~~~bash
+cd docker && docker-compose -f docker-compose.yml up -d
+~~~
+
+- Выполним команду для просмотра логов `post` сервиса:
+
+~~~bash
+docker-compose logs -f post
+
+
+post_1     | {"addr": "172.19.0.2", "event": "request", "level": "info", "method": "GET", "path": "/healthcheck?", "request_id": null, "response_status": 200, "service": "post", "timestamp": "2022-03-20 18:15:50"}
+post_1     | {"addr": "172.19.0.2", "event": "request", "level": "info", "method": "GET", "path": "/healthcheck?", "request_id": null, "response_status": 200, "service": "post", "timestamp": "2022-03-20 18:15:55"}
+post_1     | {"addr": "172.19.0.2", "event": "request", "level": "info", "method": "GET", "path": "/healthcheck?", "request_id": null, "response_status": 200, "service": "post", "timestamp": "2022-03-20 18:16:00"}
+post_1     | {"addr": "172.19.0.2", "event": "request", "level": "info", "method": "GET", "path": "/healthcheck?", "
+~~~
+
+Каждое событие, связанное с работой нашего приложения логируется в JSON-формате и имеет нужную нам структуру: тип события (event), сообщение (message), переданные функции параметры (params), имя сервиса (service) и др.
+
+- Настройка отправки логов во Fluentd для сервиса post
+
+По умолчанию Docker-контейнерами используется json-file драйвер для логирования информации, которая пишется сервисом внутри контейнера в stdout (и stderr).
+Для отправки логов во Fluentd используем docker-драйвер fluentd.
+
+> [https://docs.docker.com/config/containers/logging/fluentd/](https://docs.docker.com/config/containers/logging/fluentd/)
+
+Определим драйвер для логирования для сервиса post внутри файла `docker/docker-compose.yml`:
+
+~~~yaml
+post:
+  image: ${USER_NAME}/post:${POST_VERSION}
+  environment:
+    - POST_DATABASE_HOST=post_db
+    - POST_DATABASE=posts
+  depends_on:
+    - post_db
+  ports:
+    - "5000:5000"
+  logging:
+    driver: "fluentd"
+    options:
+      fluentd-address: localhost:24224
+      tag: service.post
+~~~
+
+- Запуск системы логирования
+
+Поднимем инфраструктуру централизованной системы логирования и перезапустим сервисы приложения:
+
+~~~bash
+docker-compose -f docker-compose-logging.yml up -d
+docker-compose down
+docker-compose -f docker-compose.yml up -d
+~~~
+
+Создадим несколько постов в приложении:
+
+![logging-1.png](logging/logging-1.png)
 
 ## **Полезное:**
 
-[Prometheus: мониторинг HTTP через Blackbox экспортер](https://habr.com/ru/company/otus/blog/500448/)
 
 </details>

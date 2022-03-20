@@ -1,50 +1,50 @@
 version: '3.3'
 services:
 
-  blackbox:
-    image: ${USER_NAME}/blackbox-exporter:${BLACKBOX_VERSION}
-    command:
-      - '--config.file=/etc/blackboxexporter/config.yml'
-    # image: prom/blackbox-exporter-linux-amd64:v0.20.0
-    networks:
-      - back_net
-      - front_net
-
-  mongodb-exporter:
-    image: percona/mongodb_exporter:0.20
-    environment:
-      MONGODB_URI: mongodb://post_db:27017
-    networks:
-      - back_net
-
-  node-exporter:
-    image: prom/node-exporter:v0.15.2
-    user: root
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
-    networks:
-      - front_net
-      - back_net
-
-  prometheus:
-    image: ${USER_NAME}/prometheus:${PROM_VERSION}
-    ports:
-      - '9090:9090'
-    volumes:
-      - prometheus_data:/prometheus
-    command: # Передаем доп параметры в командной строке
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention=1d' # Задаем время хранения метрик в 1 день
-    networks:
-      - front_net
-      - back_net
+  # blackbox:
+  #   image: ${USER_NAME}/blackbox-exporter:${BLACKBOX_VERSION}
+  #   command:
+  #     - '--config.file=/etc/blackboxexporter/config.yml'
+  #   # image: prom/blackbox-exporter-linux-amd64:v0.20.0
+  #   networks:
+  #     - back_net
+  #     - front_net
+  #
+  # mongodb-exporter:
+  #   image: percona/mongodb_exporter:0.20
+  #   environment:
+  #     MONGODB_URI: mongodb://post_db:27017
+  #   networks:
+  #     - back_net
+  #
+  # node-exporter:
+  #   image: prom/node-exporter:v0.15.2
+  #   user: root
+  #   volumes:
+  #     - /proc:/host/proc:ro
+  #     - /sys:/host/sys:ro
+  #     - /:/rootfs:ro
+  #   command:
+  #     - '--path.procfs=/host/proc'
+  #     - '--path.sysfs=/host/sys'
+  #     - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+  #   networks:
+  #     - front_net
+  #     - back_net
+  #
+  # prometheus:
+  #   image: ${USER_NAME}/prometheus:${PROM_VERSION}
+  #   ports:
+  #     - '9090:9090'
+  #   volumes:
+  #     - prometheus_data:/prometheus
+  #   command: # Передаем доп параметры в командной строке
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--storage.tsdb.retention=1d' # Задаем время хранения метрик в 1 день
+  #   networks:
+  #     - front_net
+  #     - back_net
 
   post_db:
     image: mongo:${MONGO_VERSION}
@@ -67,6 +67,18 @@ services:
   post:
     # build: ./post-py
     image: ${USER_NAME}/post:${POST_VERSION}
+    environment:
+      - POST_DATABASE_HOST=post_db
+      - POST_DATABASE=posts
+    depends_on:
+      - post_db
+    ports:
+      - "5000:5000"
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.post
     networks:
       - front_net
       - back_net
