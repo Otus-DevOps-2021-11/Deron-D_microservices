@@ -2931,6 +2931,134 @@ docker-compose -f docker-compose.yml up -d
 
 ### Задание со ⭐
 
+#### Добавление в Prometheus мониторинга MongoDB
+
+> Используем стабильный образ из официального репо percona [MongoDB exporter](https://github.com/percona/mongodb_exporter)
+
+- Добавим запуск экспортера в `docker/docker-compose.yml`
+
+~~~yaml
+mongodb-exporter:
+  image: percona/mongodb_exporter:0.20
+  environment:
+    MONGODB_URI: mongodb://post_db:27017
+  networks:
+    - back_net
+~~~
+
+- и в `monitoring/prometheus/prometheus.yml`
+
+~~~yaml
+- job_name: 'mongodb'
+  static_configs:
+    - targets:
+      - 'mongodb-exporter:9216'
+~~~
+
+- пересоберем образ `monitoring/prometheus` и перезапустим сервисы, не забыв актуализировать версию сервиса `prometheus`
+в `.env`
+
+~~~bash
+cd monitoring/prometheus
+docker build -t $USER_NAME/prometheus:1.2 .
+docker push $USER_NAME/prometheus:1.2
+
+cd ../../docker/
+docker-compose down
+docker-compose -f docker-compose.yml up -d
+~~~
+
+![prometheus-17.png](monitoring/prometheus-17.png)
+
+#### Blackbox Exporter
+
+**Blackbox exporter** позволяет реализовать для Prometheus мониторинг по принципу черного ящика. Т. е. например мы можем проверить отвечает ли сервис по http, или принимает ли соединения порт.
+
+- Задав в качестве базового образа [https://github.com/prometheus/blackbox_exporter](https://github.com/prometheus/blackbox_exporter) создадим `monitoring\blackbox-exporter\Dockerfile` со следующим содержимым:
+
+~~~Dockerfile
+FROM prom/blackbox-exporter:0.20.0
+COPY blackbox.yml /etc/blackboxexporter/config.yml
+~~~
+
+- Подготовим конфигурационный файл `blackbox.yml`:
+
+~~~yml
+modules:
+  http_2xx:
+    http:
+      no_follow_redirects: false
+      preferred_ip_protocol: ip4
+      valid_http_versions:
+      - HTTP/1.1
+      - HTTP/2
+      valid_status_codes: []
+    prober: http
+    timeout: 5s
+~~~
+
+- Соберем и запушим образ:
+
+~~~bash
+cd monitoring/blackbox-exporter
+docker build -t $USER_NAME/blackbox-exporter:1.1 .
+docker push $USER_NAME/blackbox-exporter:1.1
+~~~
+
+- Добавим запуск экспортера в `docker/docker-compose.yml`
+
+~~~yaml
+services:
+
+  blackbox-exporter:
+    image: ${USER_NAME}/blackbox-exporter:${BLACKBOX_VERSION}
+    command:
+      - '--config.file=/etc/blackboxexporter/config.yml'
+    networks:
+      - back_net
+      - front_net
+...
+~~~
+
+- Добавим job в `monitoring/prometheus/prometheus.yml`:
+
+~~~yaml
+- job_name: 'blackbox'
+  scrape_interval: 5s
+  metrics_path: /probe
+  params:
+    module: [ http_2xx ]
+  static_configs:
+    - targets:
+      - http://ui:9292
+      - http://comment:9292/healthcheck
+      - http://post:5000/healthcheck
+  relabel_configs:
+    - source_labels: [ __address__ ]
+      target_label: __param_target
+    - source_labels: [ __param_target ]
+      target_label: instance
+    - target_label: __address__
+      replacement: blackbox:9115
+~~~
+
+- пересоберем образ `monitoring/prometheus` и перезапустим сервисы, не забыв актуализировать версию сервиса `prometheus`
+в `.env`
+
+~~~bash
+cd monitoring/prometheus
+docker build -t $USER_NAME/prometheus:1.6.3 .
+docker push $USER_NAME/prometheus:1.6.3
+
+cd ../../docker/
+docker-compose down
+docker-compose -f docker-compose.yml up -d
+~~~
+
+![prometheus-18.png](monitoring/prometheus-18.png)
+
 ## **Полезное:**
+
+[Prometheus: мониторинг HTTP через Blackbox экспортер](https://habr.com/ru/company/otus/blog/500448/)
 
 </details>

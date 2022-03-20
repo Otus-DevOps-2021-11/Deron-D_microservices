@@ -1,6 +1,22 @@
 version: '3.3'
 services:
 
+  blackbox:
+    image: ${USER_NAME}/blackbox-exporter:${BLACKBOX_VERSION}
+    command:
+      - '--config.file=/etc/blackboxexporter/config.yml'
+    # image: prom/blackbox-exporter-linux-amd64:v0.20.0
+    networks:
+      - back_net
+      - front_net
+
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.20
+    environment:
+      MONGODB_URI: mongodb://post_db:27017
+    networks:
+      - back_net
+
   node-exporter:
     image: prom/node-exporter:v0.15.2
     user: root
@@ -15,7 +31,6 @@ services:
     networks:
       - front_net
       - back_net
-
 
   prometheus:
     image: ${USER_NAME}/prometheus:${PROM_VERSION}
