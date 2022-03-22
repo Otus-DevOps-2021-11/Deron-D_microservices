@@ -2645,3 +2645,420 @@ gitlab-ci-vm               : ok=3    changed=1    unreachable=0    failed=0    s
 - [GitLab Docker images](https://docs.gitlab.com/ee/install/docker.html)
 
 </details>
+
+# **Лекция №22: Введение в мониторинг. Модели и принципы работы систем мониторинга**
+> _monitoring-1_
+<details>
+  <summary>Создание и запуск системы мониторинга Prometheus.</summary>
+
+## **Задание:**
+Цель:
+В данном дз студент познакомится с инструментов мониторинга Prometheus. Произведет его настройку и настройку exporters.
+В данном задании тренируются навыки: создания системы мониторинга на базе Prometheus.
+
+Описание/Пошаговая инструкция выполнения домашнего задания:
+Мониторинг состояния микросервисов, сбор метрик при помощи prometheus exporters.
+Все действия описаны в методическом указании.
+
+Критерии оценки:
+0 б. - задание не выполнено
+1 б. - задание выполнено
+2 б. - выполнены все дополнительные задания
+
+## **План**
+- **Prometheus: запуск, конфигурация, знакомство с Web UI**
+- **Мониторинг состояния микросервисов**
+- **Сбор метрик хоста с использованием экспортера**
+- **Задание со ⭐**
+
+---
+## **Выполнено:**
+
+1. Создадим Docker хост в Yandex Cloud и настроим локальное окружение на работу с ним
+
+~~~bash
+yc compute instance create \
+  --name docker-host \
+  --zone ru-central1-a \
+  --network-interface subnet-name=docker-net-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
+  --ssh-key ~/.ssh/id_rsa.pub
+...
+      address: 178.154.200.254
+...
+
+docker-machine create \
+  --driver generic \
+  --generic-ip-address=178.154.200.254 \
+  --generic-ssh-user yc-user \
+  --generic-ssh-key ~/.ssh/id_rsa \
+docker-host
+
+eval $(docker-machine env docker-host)
+~~~
+
+2. Запуск Prometheus
+
+~~~bash
+➜  Deron-D_microservices git:(monitoring-1) ✗ docker run --rm -p 9090:9090 -d --name prometheus  prom/prometheus
+129f6f1333143d743211b3577cb1e76a3d15431919c1f12dd9cd48f77922b37e
+➜  Deron-D_microservices git:(monitoring-1) ✗ docker ps
+CONTAINER ID   IMAGE             COMMAND                  CREATED         STATUS         PORTS                                       NAMES
+129f6f133314   prom/prometheus   "/bin/prometheus --c…"   7 seconds ago   Up 4 seconds   0.0.0.0:9090->9090/tcp, :::9090->9090/tcp   prometheus
+~~~
+
+Откроем веб интерфейс [http://178.154.200.254:9090/](http://178.154.200.254:9090/)
+
+> IP адрес созданной VM можно узнать используя команду: `docker-machine ip docker-host`
+
+![prometheus-1.png](monitoring/prometheus-1.png)
+
+Выполним запрос:
+
+![prometheus-2.png](monitoring/prometheus-2.png)
+
+Поясним результат вывода:
+~~~json
+prometheus_build_info{branch="HEAD", goversion="go1.17.8", instance="localhost:9090", job="prometheus", revision="881111fec4332c33094a6fb2680c71fffc427275", version="2.34.0"}
+1
+~~~
+
+**prometheus_build_info** - название метрики. Идентификатор собранной информации.
+**branch, goversion, instance, job, revision, version** - лейблы. Добавляют метаданные метрике, уточняя её. Использование лейблов дает нам возможность не ограничиваться лишь одним названием метрик для идентификации получаемой информации. Лейблы содержатся в {} скобках и представлены наборами "ключ=значение".
+**1** - значение метрики. Численное значение метрики, либо NaN, если значение недоступно.
+
+3. Targets
+Targets (цели) - представляют собой системы или процессы, за которыми следит Prometheus. Prometheus является pull системой, поэтому он постоянно делает HTTP запросы на имеющиеся у него адреса (endpoints). Посмотрим текущий список целей
+
+![prometheus-3.png](monitoring/prometheus-3.png)
+
+В веб интерфейсе мы можем видеть состояние каждого endpoint-a (up); лейбл (instance="someURL"), который Prometheus автоматически добавляет к каждой метрике, прошедшее с момента последней операции сбора информации с endpoint-a.
+Также здесь отображаются ошибки при их наличии и можно отфильтровать только неживые таргеты.
+
+![prometheus-4.png](monitoring/prometheus-4.png)
+
+Остановим контейнер
+~~~bash
+docker stop prometheus
+~~~
+
+4. Создание Docker образа
+
+- Создадим `monitoring/prometheus/Dockerfile`
+
+~~~Dockerfile
+FROM prom/prometheus:v2.1.0
+ADD prometheus.yml /etc/prometheus/
+~~~
+
+- Создадим фвйл конфигурации `monitoring/prometheus/Dockerfile`
+
+~~~yaml
+---
+global:
+  scrape_interval: '5s'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+        - 'localhost:9090'
+
+  - job_name: 'ui'
+    static_configs:
+      - targets:
+        - 'ui:9292'
+
+  - job_name: 'comment'
+    static_configs:
+      - targets:
+        - 'comment:9292'
+~~~
+
+- Соберем образ
+
+~~~bash
+export USER_NAME=deron73
+$ docker build -t $USERNAME/prometheus .
+
+➜  prometheus git:(monitoring-1) ✗ docker images
+REPOSITORY           TAG       IMAGE ID       CREATED          SIZE
+deron73/prometheus   latest    22a395b9d326   12 seconds ago   112MB
+prom/prometheus      latest    e3cf894a63f5   4 days ago       205MB
+prom/prometheus      v2.1.0    c8ecf7c719c1   4 years ago      112MB
+~~~
+
+5. Соберем images из корня репозитория
+
+~~~bash
+for i in ui post-py comment; do cd src/$i; bash docker_build.sh; cd -; done
+~~~
+
+6. Поднимем Prometheus совместно с микросервисами. Для этого определим в `docker/docker-compose.yml` файле новый сервис.
+
+~~~yaml
+prometheus:
+  image: ${USER_NAME}/prometheus
+  ports:
+    - '9090:9090'
+  volumes:
+    - prometheus_data:/prometheus
+  command: # Передаем доп параметры в командной строке
+    - '--config.file=/etc/prometheus/prometheus.yml'
+    - '--storage.tsdb.path=/prometheus'
+    - '--storage.tsdb.retention=1d' # Задаем время хранения метрик в 1 день
+  networks:
+    - front_net
+    - back_net   
+...
+volumes:
+  prometheus_data:
+~~~
+
+7. Мониторинг состояния микросервисов
+
+- Список endpoint-ов
+![prometheus-5.png](monitoring/prometheus-5.png)
+
+- Состояние сервиса UI
+![prometheus-6.png](monitoring/prometheus-6.png)
+
+- Остановим post сервис и проверим, как изменится статус ui сервиса, который зависим от post.
+
+~~~bash
+docker-compose stop post
+Stopping docker_post_1 ... done
+~~~
+
+- Обновим наш график
+![prometheus-7.png](monitoring/prometheus-7.png)
+![prometheus-8.png](monitoring/prometheus-8.png)
+
+- Поиск проблемы
+![prometheus-9.png](monitoring/prometheus-9.png)
+![prometheus-12.png](monitoring/prometheus-12.png)
+![prometheus-11.png](monitoring/prometheus-11.png)
+
+- Чиним
+
+~~~bash
+docker-compose start post
+Starting post ... done
+~~~
+
+![prometheus-13.png](monitoring/prometheus-13.png)
+![prometheus-14.png](monitoring/prometheus-14.png)
+
+8. Сбор метрик хоста
+
+- Node exporter
+Воспользуемся Node экспортер для сбора информации о работе Docker хоста и представлению этой информации в Prometheus.
+
+Определим ещё один сервиc в `docker/docker-compose.yml` файле
+
+~~~yaml
+services:
+
+  node-exporter:
+    image: prom/node-exporter:v0.15.2
+    user: root
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+    networks:
+      - front_net
+      - back_net
+...
+~~~
+
+- Добавим еще один job в `prometheus.yml`:
+
+~~~yaml
+scrape_configsL
+  ...
+  - job_name: 'node'
+    static_configs:
+      - targets:
+        - 'node-exporter:9100'
+~~~
+
+- Пересоберем образ
+
+~~~bash
+monitoring/prometheus $ docker build -t $USER_NAME/prometheus:1.1 .
+~~~
+
+- Пересоздадим наши сервисы
+
+~~~bash
+docker-compose down
+docker-compose up -d
+~~~
+
+- Получим информацию об использовании CPU
+
+![prometheus-15.png](monitoring/prometheus-15.png)
+
+**Проверим мониторинг**
+
+- Зайдем на хост: `docker-machine ssh docker-host`
+- Добавим нагрузки: `yes > /dev/null`
+
+
+![prometheus-16.png](monitoring/prometheus-16.png)
+
+9. Запушим собранные образы на DockerHub:
+
+~~~bash
+docker tag $USER_NAME/comment $USER_NAME/comment:1.0
+docker tag $USER_NAME/ui $USER_NAME/ui:1.0
+docker tag $USER_NAME/post $USER_NAME/post:1.0
+docker tag $USER_NAME/prometheus $USER_NAME/prometheus:1.0
+docker login
+docker push $USER_NAME/comment:1.0
+docker push $USER_NAME/ui:1.0
+docker push $USER_NAME/post:1.0
+docker push $USER_NAME/prometheus:1.0
+docker-compose -f docker-compose.yml up -d
+~~~
+
+> Cсылка на докер хаб с нашими образами [https://hub.docker.com/u/deron73](https://hub.docker.com/u/deron73)
+
+### Задание со ⭐
+
+#### Добавление в Prometheus мониторинга MongoDB
+
+> Используем стабильный образ из официального репо percona [MongoDB exporter](https://github.com/percona/mongodb_exporter)
+
+- Добавим запуск экспортера в `docker/docker-compose.yml`
+
+~~~yaml
+mongodb-exporter:
+  image: percona/mongodb_exporter:0.20
+  environment:
+    MONGODB_URI: mongodb://post_db:27017
+  networks:
+    - back_net
+~~~
+
+- и в `monitoring/prometheus/prometheus.yml`
+
+~~~yaml
+- job_name: 'mongodb'
+  static_configs:
+    - targets:
+      - 'mongodb-exporter:9216'
+~~~
+
+- пересоберем образ `monitoring/prometheus` и перезапустим сервисы, не забыв актуализировать версию сервиса `prometheus`
+в `.env`
+
+~~~bash
+cd monitoring/prometheus
+docker build -t $USER_NAME/prometheus:1.2 .
+docker push $USER_NAME/prometheus:1.2
+
+cd ../../docker/
+docker-compose down
+docker-compose -f docker-compose.yml up -d
+~~~
+
+![prometheus-17.png](monitoring/prometheus-17.png)
+
+#### Blackbox Exporter
+
+**Blackbox exporter** позволяет реализовать для Prometheus мониторинг по принципу черного ящика. Т. е. например мы можем проверить отвечает ли сервис по http, или принимает ли соединения порт.
+
+- Задав в качестве базового образа [https://github.com/prometheus/blackbox_exporter](https://github.com/prometheus/blackbox_exporter) создадим `monitoring\blackbox-exporter\Dockerfile` со следующим содержимым:
+
+~~~Dockerfile
+FROM prom/blackbox-exporter:0.20.0
+COPY blackbox.yml /etc/blackboxexporter/config.yml
+~~~
+
+- Подготовим конфигурационный файл `blackbox.yml`:
+
+~~~yml
+modules:
+  http_2xx:
+    http:
+      no_follow_redirects: false
+      preferred_ip_protocol: ip4
+      valid_http_versions:
+      - HTTP/1.1
+      - HTTP/2
+      valid_status_codes: []
+    prober: http
+    timeout: 5s
+~~~
+
+- Соберем и запушим образ:
+
+~~~bash
+cd monitoring/blackbox-exporter
+docker build -t $USER_NAME/blackbox-exporter:1.1 .
+docker push $USER_NAME/blackbox-exporter:1.1
+~~~
+
+- Добавим запуск экспортера в `docker/docker-compose.yml`
+
+~~~yaml
+services:
+
+  blackbox-exporter:
+    image: ${USER_NAME}/blackbox-exporter:${BLACKBOX_VERSION}
+    command:
+      - '--config.file=/etc/blackboxexporter/config.yml'
+    networks:
+      - back_net
+      - front_net
+...
+~~~
+
+- Добавим job в `monitoring/prometheus/prometheus.yml`:
+
+~~~yaml
+- job_name: 'blackbox'
+  scrape_interval: 5s
+  metrics_path: /probe
+  params:
+    module: [ http_2xx ]
+  static_configs:
+    - targets:
+      - http://ui:9292
+      - http://comment:9292/healthcheck
+      - http://post:5000/healthcheck
+  relabel_configs:
+    - source_labels: [ __address__ ]
+      target_label: __param_target
+    - source_labels: [ __param_target ]
+      target_label: instance
+    - target_label: __address__
+      replacement: blackbox:9115
+~~~
+
+- пересоберем образ `monitoring/prometheus` и перезапустим сервисы, не забыв актуализировать версию сервиса `prometheus`
+в `.env`
+
+~~~bash
+cd monitoring/prometheus
+docker build -t $USER_NAME/prometheus:1.6.3 .
+docker push $USER_NAME/prometheus:1.6.3
+
+cd ../../docker/
+docker-compose down
+docker-compose -f docker-compose.yml up -d
+~~~
+
+![prometheus-18.png](monitoring/prometheus-18.png)
+
+## **Полезное:**
+
+[Prometheus: мониторинг HTTP через Blackbox экспортер](https://habr.com/ru/company/otus/blog/500448/)
+
+</details>
