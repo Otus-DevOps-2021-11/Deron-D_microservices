@@ -3289,6 +3289,8 @@ docker-compose -f docker-compose.yml up -d
 
 ![logging-1.png](logging/logging-1.png)
 
+
+
 ## **Полезное:**
 
 
