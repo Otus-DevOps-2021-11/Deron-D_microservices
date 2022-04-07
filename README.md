@@ -3668,6 +3668,69 @@ docker-compose -f docker-compose-logging.yml -f docker-compose.yml up -d
 Из этих 325.826 ms ушло 287.480 ms на то, чтобы ui мог направить запрос сервису post по пути /posts и получить от него ответ в виде списка постов.
 Синие полоски со временем называются span и представляют собой одну операцию, которая произошла при обработке запроса. Набор span'ов - это и есть трейс. Суммарное время обработки нашего запроса равно верхнему span'у, который включает в себя время всех span'ов, расположенных под ним
 
+### ⭐ Траблшутинг UI-экспириенса (по желанию)
+С нашим приложением происходит что-то странное. Пользователи жалуются, что при нажатии на пост они вынуждены долго ждать, пока у них загрузится страница с постом. Жалоб на загрузку других страниц не поступало. Нужно выяснить, в чем проблема, используя Zipkin.
+Код приложения с багом отличается от используемого ранее в этом ДЗ и доступен в [репозитории](https://github.com/Artemmkin/bugged-code) со сломанным кодом приложения. Т.е. необходимо сбилдить багнутую версию приложения и запустить Zipkin для неё.
+
+~~~bash
+cd ~/Documents/GitHub/Deron-D_microservices/docker
+docker-compose down
+
+cd ..
+export USER_NAME='deron73'
+git clone https://github.com/Artemmkin/bugged-code
+
+cd bugged-code/
+
+cd ./src/ui && bash docker_build.sh && docker push $USER_NAME/ui:logging
+cd ../post-py && bash docker_build.sh && docker push $USER_NAME/post:logging
+cd ../comment && bash docker_build.sh && docker push $USER_NAME/comment:logging
+
+cd ~/Documents/GitHub/Deron-D_microservices/docker
+
+docker-compose -f docker-compose.yml up -d
+~~~
+
+Пытаемся открыть пост в нашем приложении и наблюдаем:
+
+![logging-11.png](logging/logging-11.png)
+
+
+В коде контейнера 'post' в файле 'post_app.py`:
+~~~python
+# Retrieve information about a post
+@zipkin_span(service_name='post', span_name='db_find_single_post')
+def find_post(id):
+    start_time = time.time()
+    try:
+        post = app.db.find_one({'_id': ObjectId(id)})
+    except Exception as e:
+        log_event('error', 'post_find',
+                  "Failed to find the post. Reason: {}".format(str(e)),
+                  request.values)
+        abort(500)
+    else:
+        stop_time = time.time()  # + 0.3
+        resp_time = stop_time - start_time
+        app.post_read_db_seconds.observe(resp_time)
+        time.sleep(3)
+        log_event('info', 'post_find',
+                  'Successfully found the post information',
+                  {'post_id': id})
+        return dumps(post)
+~~~
+
+находим строку time.sleep(3), которая создает задержку в 3 сек.
+
+
+Удалим ресурсы:
+
+~~~bash
+docker-compose -f docker-compose-logging.yml -f docker-compose.yml down
+docker-machine rm --force logging
+yc compute instance delete logging
+~~~
+
 ## **Полезное:**
 
 [Grok Parser for Fluentd ](https://www.rubydoc.info/gems/fluent-plugin-grok-parser)
