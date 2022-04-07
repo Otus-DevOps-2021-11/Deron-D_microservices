@@ -3116,12 +3116,12 @@ yc compute instance create \
   --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
   --ssh-key ~/.ssh/id_rsa.pub
 ...
-      address: 178.154.227.85
+      address: 51.250.69.161 (51.250.64.19)
 ...
 
 docker-machine create \
   --driver generic \
-  --generic-ip-address=178.154.227.85 \
+  --generic-ip-address=51.250.64.19 \
   --generic-ssh-user yc-user \
   --generic-ssh-key ~/.ssh/id_rsa \
   logging
@@ -3180,10 +3180,13 @@ services:
 - Создадим Dockerfile для Fluentd в директории `logging/fluentd`
 
 ~~~Dockerfile
-FROM fluent/fluentd:v0.12
-RUN gem install fluent-plugin-elasticsearch --no-rdoc --no-ri --version 1.9.5
-RUN gem install fluent-plugin-grok-parser --no-rdoc --no-ri --version 1.0.0
-ADD fluent.conf /fluentd/etc
+FROM fluent/fluentd:v1.12.0-debian-1.0
+USER root
+RUN gem install elasticsearch -v 7.17.0
+RUN gem install fluent-plugin-grok-parser --no-document --version 2.6.2
+RUN gem install fluent-plugin-elasticsearch --no-document --version 5.0.3
+USER fluent
+ADD fluent.conf /fluentd/etc/fluent.conf
 ~~~
 
 и файл конфигурации `logging/fluentd/fluent.conf`:
@@ -3217,6 +3220,7 @@ ADD fluent.conf /fluentd/etc
 - Сборка образа Fluentd
 
 ~~~bash
+export USER_NAME='deron73'
 cd logging/fluentd
 docker build -t $USER_NAME/fluentd .
 ~~~
@@ -3277,21 +3281,396 @@ post:
 
 - Запуск системы логирования
 
-Поднимем инфраструктуру централизованной системы логирования и перезапустим сервисы приложения:
+Поднимем инфраструктуру централизованной системы логирования:
 
 ~~~bash
 docker-compose -f docker-compose-logging.yml up -d
+docker-machine ssh logging
+curl -GET localhost:9200/_cat/indices?v
+health status index                           uuid                   pri rep docs.count docs.deleted store.size pri.store.size
+green  open   .kibana_task_manager_7.13.1_001 ty2QSM5lRNWECAS-hvCfrA   1   0         10            9       208b           208b
+green  open   .apm-custom-link                A5MwF2cZR9OykfMgL8K6Qw   1   0          0            0       208b           208b
+green  open   .apm-agent-configuration        Z0wvFKzZS1miUs0TlpfusA   1   0          0            0       208b           208b
+yellow open   fluentd-20220330                OiyHZQiOTxqchBwa8mv67g   1   1          3            0       208b           208b
+green  open   .kibana-event-log-7.13.1-000001 -81pVMWORsqx4aBx7YO_dA   1   0          1            0      5.5kb          5.5kb
+green  open   .kibana_7.13.1_001              e7wSt3dySHipjnFaKoUfQw   1   0          8            0       208b           208b
+
+
+health status index                           uuid                   pri rep docs.count docs.deleted store.size pri.store.size
+green  open   fluentd-20220330                OiyHZQiOTxqchBwa8mv67g   1   0          3            0      7.2kb          7.2kb
+
+yc-user@logging:~$ exit
+logout
+~~~
+
+
+Перезапустим сервисы приложения:
+
+~~~
 docker-compose down
 docker-compose -f docker-compose.yml up -d
 ~~~
 
 Создадим несколько постов в приложении:
 
+~~~
+curl -GET localhost:9200/_cat/indices?v
+
+
+curl -X PUT -H "Content-Type: application/json" "http://localhost:9200/fluentd-20220329/_settings" -d '{ "number_of_replicas": 0 }'
+~~~
+
 ![logging-1.png](logging/logging-1.png)
 
+6. Создание индекса и просмотр логов в Kibana
 
+![logging-2.png](logging/logging-2.png)
+
+
+7. Добавление фильтра во Fluentd для сервиса post
+
+Добавим фильтр для парсинга json-логов, приходящих от сервиса post, в `logging/fluentd/fluent.conf`:
+
+~~~
+<source>
+ @type forward
+ port 24224
+ bind 0.0.0.0
+</source>
+
+<filter service.post>
+ @type parser
+ format json
+ key_name log
+</filter>
+
+<match *.**>
+ @type copy
+
+~~~
+
+Пересоберем образ и перезапустим сервис Fluentd:
+
+~~~
+docker build -t $USER_NAME/fluentd .
+cd ../../docker
+docker-compose -f docker-compose-logging.yml up -d fluentd
+~~~
+
+Создадим пару новых постов, чтобы проверить парсинг логов
+
+### Просмотр структурированных логов
+
+![logging-3.png](logging/logging-3.png)
+
+Поиск по структурированным логам
+
+Выполним, для примера, поиск по событию создания нового поста. KQL- запрос: `event: post_create`:
+
+![logging-4.png](logging/logging-4.png)
+
+
+### Неструктурированные логи
+
+Неструктурированные логи отличаются отсутствием четкой структуры данных. Также часто бывает, что формат лог-сообщений не подстроен под систему централизованного логирования, что существенно увеличивает затраты вычислительных и временных ресурсов на обработку данных и выделение нужной информации.
+
+На примере сервиса ui рассмотрим пример логов с неудобным форматом сообщений. Настроим отправку логов во Fluentd для сервиса ui - `docker/docker-compose.yml`:
+
+~~~
+logging:
+  driver: "fluentd"
+  options:
+    fluentd-address: localhost:24224
+    tag: service.ui
+~~~
+
+Перезапустим ui:
+
+```
+docker-compose stop ui
+docker-compose rm ui
+docker-compose -f docker-compose.yml up -d
+```
+
+Произведем какие-нибудь действия на странице приложения reddit, а затем вернемся в Kibana и поменяем запрос на
+`container_name : *ui*`. Видно, что общая структура у поля log в сообщениях от этого сервиса отсутствует.
+
+~~~
+Apr 7, 2022 @ 18:15:30.000	I, [2022-04-07T15:15:30.112189 #1] INFO -- : service=ui | event=show_all_posts | request_id=18d726e1-bbe1-4079-ac91-6e918ccf3004 | message='Successfully showed the home page with posts' | params: "{}"
+~~~
+
+![logging-5.png](logging/logging-5.png)
+
+
+Когда приложение или сервис не пишет структурированные логи, приходится использовать регулярные выражения для их парсинга в `logging/fluentd/fluent.conf`.
+
+Следующее регулярное выражение нужно, чтобы успешно выделить интересующую нас информацию из лога сервиса ui в поля:
+~~~
+<filter service.ui>
+  @type parser
+  format /\[(?<time>[^\]]*)\]  (?<level>\S+) (?<user>\S+)[\W]*service=(?<service>\S+)[\W]*event=(?<event>\S+)[\W]*(?:path=(?<path>\S+)[\W]*)?request_id=(?<request_id>\S+)[\W]*(?:remote_addr=(?<remote_addr>\S+)[\W]*)?(?:method= (?<method>\S+)[\W]*)?(?:response_status=(?<response_status>\S+)[\W]*)?(?:message='(?<message>[^\']*)[\W]*)?/
+  key_name log
+</filter>
+~~~
+
+Пересоберем образ и перезапустим сервис Fluentd:
+~~~bash
+logging/fluentd $ docker build -t $USER_NAME/fluentd .
+docker $ docker-compose stop fluentd
+docker $ docker-compose rm fluentd
+docker $ docker-compose -f docker-compose-logging.yml up -d fluentd
+~~~
+
+В Kibana, сделаем поиск по: @log_name: service.ui Теперь наши логи как следует распарсены:
+
+![logging-6.png](logging/logging-6.png)
+
+### Grok-шаблоны
+Созданные регулярки могут иметь ошибки, их сложно менять и ещё сложнее - читать без применения инструментов [навроде этого](https://regex101.com/). Для облегчения задачи парсинга вместо стандартных регулярок можно использовать grok-шаблоны. По-сути grok'и - это именованные шаблоны регулярных выражений (очень похоже на функции). Можно использовать готовый regexp, просто сославшись на него как на функцию.
+Добавим следующий шаблон в конфигурацию Fluentd, убрав шаблон с регулярками. Ребилдним новый образ Fluentd и перезапустим через docker-compose:
+
+~~~
+<filter service.ui>
+  @type parser
+  key_name log
+  <parse>
+    @type grok
+    <grok>
+      pattern %{RUBY_LOGGER}
+    </grok>
+  </parse>
+</filter>
+~~~
+
+~~~bash
+cd /Users/dpp/Documents/GitHub/Deron-D_microservices/logging/fluentd
+docker build -t $USER_NAME/fluentd .
+cd /Users/dpp/Documents/GitHub/Deron-D_microservices/docker
+docker-compose stop fluentd
+docker-compose rm -f fluentd
+docker-compose -f docker-compose-logging.yml up -d fluentd
+~~~
+
+Вот как выглядят сообщения теперь:
+
+![logging-7.png](logging/logging-7.png)
+![logging-8.png](logging/logging-8.png)
+
+Как было видно на предыдущем слайде, часть логов нужно еще дораспарсить. Для этого используем несколько grok'ов по очереди
+
+~~~
+<filter service.ui>
+  @type parser
+  key_name log
+  <parse>
+    @type grok
+    <grok>
+      pattern %{RUBY_LOGGER}
+    </grok>
+  </parse>
+</filter>
+
+<filter service.ui>
+  @type parser
+  <parse>
+    @type grok
+    <grok>
+      pattern service=%{WORD:service} \| event=%{WORD:event} \| request_id=%{GREEDYDATA:request_id} \| message=%{GREEDYDATA:message}
+    </grok>
+  </parse>
+  key_name message
+  reserve_data true
+</filter>
+~~~
+
+Теперь лог выглядит следующим образом:
+~~~
+Apr 7, 2022 @ 22:01:03.436	@log_name:service.ui @log_name.keyword:service.ui @timestamp:Apr 7, 2022 @ 22:01:03.436 event:show_all_posts event.keyword:show_all_posts loglevel:INFO loglevel.keyword:INFO message:'Successfully showed the home page with posts' | params: "{}" message.keyword:'Successfully showed the home page with posts' | params: "{}" pid:1 progname: progname.keyword: request_id:2edf688d-7502-4b51-8d75-28fa0aca45b2 request_id.keyword:2edf688d-7502-4b51-8d75-28fa0aca45b2 service:ui service.keyword:ui timestamp:2022-04-07T19:01:03.435602 timestamp.keyword:2022-04-07T19:01:03.435602 _id:pANmBYABDB8Ii-J_ywqk _index:fluentd-20220407 _score: - _type:_doc
+~~~
+
+
+⭐ Ещё один формат лога остался неразобранным:
+
+~~~
+Apr 7, 2022 @ 22:01:03.449	@log_name:service.ui @log_name.keyword:service.ui @timestamp:Apr 7, 2022 @ 22:01:03.449 loglevel:INFO loglevel.keyword:INFO message:service=ui | event=request | path=/ | request_id=2edf688d-7502-4b51-8d75-28fa0aca45b2 | remote_addr=194.8.47.118 | method= GET | response_status=200 message.keyword:service=ui | event=request | path=/ | request_id=2edf688d-7502-4b51-8d75-28fa0aca45b2 | remote_addr=194.8.47.118 | method= GET | response_status=200 pid:1 progname: progname.keyword: timestamp:2022-04-07T19:01:03.448548 timestamp.keyword:2022-04-07T19:01:03.448548 _id:pQNmBYABDB8Ii-J_ywqk _index:fluentd-20220407 _score: - _type:_doc
+~~~
+
+Добавим в `fluent.conf`
+~~~
+<filter service.ui>
+  @type parser
+  <parse>
+    @type grok
+    <grok>
+      pattern service=%{WORD:service} \| event=%{WORD:event} \| path=%{URIPATHPARAM:request} \| request_id=%{GREEDYDATA:request_id} \| remote_addr=%{IP:ip_address} \| method=.%{WORD:method} \| response_status=%{INT:response_status}
+    </grok>
+  </parse>
+  key_name message
+  reserve_data true
+</filter>
+~~~
+
+> Не забудем перебилдить образ, переподнять контейнер и проделать в приложении какие-либо действия.
+
+~~~bash
+cd /Users/dpp/Documents/GitHub/Deron-D_microservices/logging/fluentd
+docker build -t $USER_NAME/fluentd .
+cd /Users/dpp/Documents/GitHub/Deron-D_microservices/docker
+docker-compose stop fluentd
+docker-compose rm -f fluentd
+docker-compose -f docker-compose-logging.yml up -d fluentd
+~~~
+
+Теперь лог выглядит следующим образом:
+~~~json
+{
+  "_index": "fluentd-20220407",
+  "_type": "_doc",
+  "_id": "pQOFBYABDB8Ii-J_ygzS",
+  "_version": 1,
+  "_score": null,
+  "fields": {
+    "remote_addr.keyword": [
+      "194.8.47.118"
+    ],
+    "loglevel.keyword": [
+      "INFO"
+    ],
+    "pid": [
+      1
+    ],
+    "@log_name.keyword": [
+      "service.ui"
+    ],
+    "timestamp.keyword": [
+      "2022-04-07T19:34:54.694008"
+    ],
+    "path": [
+      "/new"
+    ],
+    "method.keyword": [
+      "GET"
+    ],
+    "service.keyword": [
+      "ui"
+    ],
+    "event": [
+      "request"
+    ],
+    "timestamp": [
+      "2022-04-07T19:34:54.694008"
+    ],
+    "event.keyword": [
+      "request"
+    ],
+    "remote_addr": [
+      "194.8.47.118"
+    ],
+    "request_id.keyword": [
+      "75be1679-c8eb-4f53-b3b6-b77014bd5f92"
+    ],
+    "method": [
+      "GET"
+    ],
+    "response_status": [
+      200
+    ],
+    "message": [
+      "service=ui | event=request | path=/new | request_id=75be1679-c8eb-4f53-b3b6-b77014bd5f92 | remote_addr=194.8.47.118 | method= GET | response_status=200"
+    ],
+    "@timestamp": [
+      "2022-04-07T19:34:54.694Z"
+    ],
+    "progname.keyword": [
+      ""
+    ],
+    "service": [
+      "ui"
+    ],
+    "message.keyword": [
+      "service=ui | event=request | path=/new | request_id=75be1679-c8eb-4f53-b3b6-b77014bd5f92 | remote_addr=194.8.47.118 | method= GET | response_status=200"
+    ],
+    "progname": [
+      ""
+    ],
+    "loglevel": [
+      "INFO"
+    ],
+    "@log_name": [
+      "service.ui"
+    ],
+    "request_id": [
+      "75be1679-c8eb-4f53-b3b6-b77014bd5f92"
+    ],
+    "path.keyword": [
+      "/new"
+    ]
+  },
+  "highlight": {
+    "@log_name": [
+      "@kibana-highlighted-field@service.ui@/kibana-highlighted-field@"
+    ]
+  },
+  "sort": [
+    1649360094694
+  ]
+}
+~~~
+
+### Распределенный трейсинг
+
+- Добавление Zipkin в систему логирования
+
+Добавим в `docker/docker-compose-logging.yml` для сервисов логирования сервис распределенного трейсинга Zipkin:
+
+~~~yaml
+...
+zipkin:
+  image: openzipkin/zipkin:2.21.0
+  ports:
+    - "9411:9411"
+  networks:
+    - front_net
+    - back_net
+...
+~~~
+
+Добавим для каждого сервиса в 'docker/docker-compose.yml' для приложении reddit параметр `ZIPKIN_ENABLED`:
+
+~~~yaml
+environment:
+- ZIPKIN_ENABLED=${ZIPKIN_ENABLED}
+~~~
+
+В .env-файле:
+~~~
+ZIPKIN_ENABLED=true
+~~~
+
+С помощью docker-compose поднимем изменённую систему логирования:
+~~~bash
+cd /Users/dpp/Documents/GitHub/Deron-D_microservices/docker
+docker-compose -f docker-compose-logging.yml -f docker-compose.yml down
+docker-compose -f docker-compose-logging.yml -f docker-compose.yml up -d
+~~~
+
+### Просмотр трейсов в Zipkin
+
+Откроем главную страницу приложения и обновите ее несколько раз.
+Затем обновим страницу Zipkin и сделаем поиск трейсов (т.е. следов, которые оставили запросы, проходя через систему наших сервисов):
+
+![logging-9.png](logging/logging-9.png)
+
+Нажмем на один из трейсов, чтобы посмотреть, как запрос шел через нашу систему микросервисов и каково общее время обработки запроса у нашего приложения при запросе главной страницы:
+![logging-10.png](logging/logging-10.png)
+
+Видно, что первым делом наш запрос попал к сервису ui, который смог обработать наш запрос за суммарное время, равное 325.826 ms.
+Из этих 325.826 ms ушло 287.480 ms на то, чтобы ui мог направить запрос сервису post по пути /posts и получить от него ответ в виде списка постов.
+Синие полоски со временем называются span и представляют собой одну операцию, которая произошла при обработке запроса. Набор span'ов - это и есть трейс. Суммарное время обработки нашего запроса равно верхнему span'у, который включает в себя время всех span'ов, расположенных под ним
 
 ## **Полезное:**
+
+[Grok Parser for Fluentd ](https://www.rubydoc.info/gems/fluent-plugin-grok-parser)
 
 
 </details>
