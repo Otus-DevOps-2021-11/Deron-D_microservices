@@ -3798,6 +3798,202 @@ spec:
 - [comment-deployment.yml](./kubernetes/reddit/comment-deployment.yml)
 - [mongo-deployment.yml](./kubernetes/reddit/mongo-deployment.yml)
 
+
+### Установка k8s на двух нодах при помощи утилиты kubeadm
+
+Характеристики нод следующие:
+- RAM 4
+- CPU 4
+- SSD 40 GB
+
+Устанавливаем: docker v=19.03 и kube* v=1.19:
+
+Инструкции:
+
+> [https://docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/ubuntu/)
+
+> [https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/)
+
+Создаем две ноды ubuntu-1804-lts:
+
+~~~bash
+yc compute instance create \
+  --name master-node \
+  --cores=4 \
+  --memory=4 \
+  --zone ru-central1-a \
+  --network-interface subnet-name=default-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=40,type=network-ssd \
+  --ssh-key ~/.ssh/id_rsa.pub
+  ...
+  primary_v4_address:
+    address: 10.128.0.13
+    one_to_one_nat:
+      address: 51.250.14.162
+  ...
+
+yc compute instance create \
+  --name worker-node \
+  --cores=4 \
+  --memory=4 \
+  --zone ru-central1-a \
+  --network-interface subnet-name=default-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=40,type=network-ssd \
+  --ssh-key ~/.ssh/id_rsa.pub
+
+  ...    
+  primary_v4_address:
+    address: 10.128.0.5
+    one_to_one_nat:
+      address: 51.250.71.6
+  ...
+~~~
+
+Установим необходимое ПО на обеих нодах:
+
+~~~bash
+sudo apt-get remove docker docker-engine docker.io containerd runc
+
+sudo apt-get update
+sudo apt-get install apt-transport-https ca-certificates curl gnupg lsb-release
+
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+sudo apt-get update
+#sudo apt-get install -y docker-ce docker-ce-cli containerd.io kubelet kubeadm kubectl
+
+sudo apt-get install -y  --allow-downgrades docker-ce=5:19.03.15~3-0~ubuntu-bionic docker-ce-cli=5:19.03.15~3-0~ubuntu-bionic containerd.io kubelet=1.19.14-00 kubeadm=1.19.14-00 kubectl=1.19.14-00
+
+~~~
+
+Узнать доступные версии пакетов docker:
+
+~~~bash
+apt-cache madison docker-ce
+~~~
+
+Установим кластер k8s с помощью kubeadm:
+
+~~~bash
+sudo kubeadm init --apiserver-cert-extra-sans=51.250.14.162 --apiserver-advertise-address=0.0.0.0 --control-plane-endpoint=51.250.14.162 --pod-network-cidr=10.244.0.0/16
+
+Your Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+You can now join any number of control-plane nodes by copying certificate authorities
+and service account keys on each node and then running the following as root:
+
+  kubeadm join 51.250.14.162:6443 --token ukjxvc.28keatfd8geiox94 \
+    --discovery-token-ca-cert-hash sha256:c11cf566e604085dbebb1c3700d752a67c1fe8f227b4d7f2cfdab8c7bc232686 \
+    --control-plane
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 51.250.14.162:6443 --token ukjxvc.28keatfd8geiox94 \
+    --discovery-token-ca-cert-hash sha256:c11cf566e604085dbebb1c3700d752a67c1fe8f227b4d7f2cfdab8c7bc232686
+
+~~~
+
+На мастер ноде
+`To start using your cluster, you need to run the following as a regular user`:
+~~~bash
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+~~~
+
+Добавим worker ноду в кластер:
+
+~~~bash
+sudo kubeadm join 51.250.14.162:6443 --token ukjxvc.28keatfd8geiox94 \
+>     --discovery-token-ca-cert-hash sha256:c11cf566e604085dbebb1c3700d752a67c1fe8f227b4d7f2cfdab8c7bc232686
+[preflight] Running pre-flight checks
+	[WARNING IsDockerSystemdCheck]: detected "cgroupfs" as the Docker cgroup driver. The recommended driver is "systemd". Please follow the guide at https://kubernetes.io/docs/setup/cri/
+	[WARNING SystemVerification]: this Docker version is not on the list of validated versions: 20.10.14. Latest validated version: 19.03
+[preflight] Reading configuration from the cluster...
+[preflight] FYI: You can look at this config file with 'kubectl -n kube-system get cm kubeadm-config -oyaml'
+[kubelet-start] Writing kubelet configuration to file "/var/lib/kubelet/config.yaml"
+[kubelet-start] Writing kubelet environment file with flags to file "/var/lib/kubelet/kubeadm-flags.env"
+[kubelet-start] Starting the kubelet
+[kubelet-start] Waiting for the kubelet to perform the TLS Bootstrap...
+
+This node has joined the cluster:
+* Certificate signing request was sent to apiserver and a response was received.
+* The Kubelet was informed of the new secure connection details.
+
+Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
+~~~
+
+В качестве проверки воспользуемся командой:
+
+~~~bash
+yc-user@fhmkc6s37fecdbcg16u3:~$ kubectl get nodes
+NAME                   STATUS     ROLES    AGE     VERSION
+fhm2qiirai320t0iv2hp   NotReady   <none>   4m11s   v1.19.14
+fhmkc6s37fecdbcg16u3   NotReady   master   13m     v1.19.14
+~~~
+
+Наши ноды находятся в статусе NotReady, посмотрим состояние ноды:
+
+~~~bash
+kubectl describe node fhm2qiirai320t0iv2hp
+...
+  Ready            False   Sun, 10 Apr 2022 19:12:51 +0000   Sun, 10 Apr 2022 19:07:20 +0000   KubeletNotReady              runtime network not ready: NetworkReady=false reason:NetworkPluginNotReady message:docker: network plugin is not ready: cni config uninitialized
+...
+~~~
+
+
+Установим сетевой плагин:
+> [Install Calico networking and network policy for on-premises deployments](https://projectcalico.docs.tigera.io/getting-started/kubernetes/self-managed-onprem/onpremises)
+
+~~~bash
+curl https://docs.projectcalico.org/manifests/calico.yaml -O
+# Нужно изменить параметр в ранее скачанном
+# файле calico.yaml
+# Значение CALICO_IPV4POOL_CIDR должно быть 10.244.0.0/16
+
+kubectl apply -f calico.yaml
+
+~~~
+
+Проверим статусы нод и подов. Удостоверимся, что они в норме
+~~~bash
+kubectl get nodes
+NAME                   STATUS   ROLES    AGE   VERSION
+fhm2qiirai320t0iv2hp   Ready    <none>   16m   v1.19.14
+fhmkc6s37fecdbcg16u3   Ready    master   25m   v1.19.14
+
+kubectl get pods --all-namespaces
+NAMESPACE     NAME                                           READY   STATUS    RESTARTS   AGE
+kube-system   calico-kube-controllers-858c9597c8-zp7nj       1/1     Running   0          4m39s
+kube-system   calico-node-mdhc8                              1/1     Running   0          4m39s
+kube-system   calico-node-nbl8k                              1/1     Running   0          4m39s
+kube-system   coredns-f9fd979d6-tv4zr                        1/1     Running   0          29m
+kube-system   coredns-f9fd979d6-z6xb5                        1/1     Running   0          29m
+kube-system   etcd-fhmkc6s37fecdbcg16u3                      1/1     Running   0          29m
+kube-system   kube-apiserver-fhmkc6s37fecdbcg16u3            1/1     Running   0          29m
+kube-system   kube-controller-manager-fhmkc6s37fecdbcg16u3   1/1     Running   0          29m
+kube-system   kube-proxy-5wp8f                               1/1     Running   0          29m
+kube-system   kube-proxy-q6qxj                               1/1     Running   0          20m
+kube-system   kube-scheduler-fhmkc6s37fecdbcg16u3            1/1     Running   0          29m
+~~~
+
 ## **Полезное:**
 
 
