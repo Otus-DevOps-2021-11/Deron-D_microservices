@@ -3994,6 +3994,12 @@ kube-system   kube-proxy-q6qxj                               1/1     Running   0
 kube-system   kube-scheduler-fhmkc6s37fecdbcg16u3            1/1     Running   0          29m
 ~~~
 
+Проверим, что созданные вами ранее манифесты применяются корректно:
+
+~~~bash
+
+~~~
+
 ## **Полезное:**
 
 
