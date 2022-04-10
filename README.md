@@ -3997,15 +3997,15 @@ kube-system   kube-scheduler-fhmkc6s37fecdbcg16u3            1/1     Running   0
 Проверим, что созданные вами ранее манифесты применяются корректно:
 
 ~~~bash
-curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/ui-deployment.yaml -O
-curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/post-deployment.yaml -O
-curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/comment-deployment.yaml -O
-curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/mongo-deployment.yaml -O
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/ui-deployment.yml -O
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/post-deployment.yml -O
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/comment-deployment.yml -O
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/mongo-deployment.yml -O
 
-kubectl apply -f ui-deployment.yaml
-kubectl apply -f post-deployment.yaml
-kubectl apply -f mongo-deployment.yaml
-kubectl apply -f comment-deployment.yaml
+kubectl apply -f ui-deployment.yml
+kubectl apply -f post-deployment.yml
+kubectl apply -f mongo-deployment.yml
+kubectl apply -f comment-deployment.yml
 
 yc-user@fhmkc6s37fecdbcg16u3:~$ kubectl get pods
 NAME                                  READY   STATUS    RESTARTS   AGE
