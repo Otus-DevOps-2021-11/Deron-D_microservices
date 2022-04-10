@@ -14,5 +14,5 @@ spec:
         app: comment
     spec:
       containers:
-      - image: comment
+      - image: deron73/comment:1.0
         name: comment

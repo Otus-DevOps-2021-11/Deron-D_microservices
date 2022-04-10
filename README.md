@@ -3997,8 +3997,24 @@ kube-system   kube-scheduler-fhmkc6s37fecdbcg16u3            1/1     Running   0
 Проверим, что созданные вами ранее манифесты применяются корректно:
 
 ~~~bash
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/ui-deployment.yaml -O
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/post-deployment.yaml -O
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/comment-deployment.yaml -O
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/mongo-deployment.yaml -O
 
+kubectl apply -f ui-deployment.yaml
+kubectl apply -f post-deployment.yaml
+kubectl apply -f mongo-deployment.yaml
+kubectl apply -f comment-deployment.yaml
+
+yc-user@fhmkc6s37fecdbcg16u3:~$ kubectl get pods
+NAME                                  READY   STATUS    RESTARTS   AGE
+comment-deployment-7b68c7f65b-mjdvr   1/1     Running   0          75s
+mongo-deployment-7f64d64756-4swzp     1/1     Running   0          7m49s
+post-deployment-568f674bfb-npsjs      1/1     Running   0          18s
+ui-deployment-5779d9d64d-cqt8q        1/1     Running   0          3m31s
 ~~~
+
 
 ## **Полезное:**
 

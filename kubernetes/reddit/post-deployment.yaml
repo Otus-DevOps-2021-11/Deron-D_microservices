@@ -14,5 +14,5 @@ spec:
         app: post
     spec:
       containers:
-      - image: deron73/post
+      - image: deron73/post:1.0
         name: post

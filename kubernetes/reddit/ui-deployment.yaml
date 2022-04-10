@@ -14,5 +14,5 @@ spec:
         app: ui
     spec:
       containers:
-      - image: deron73/ui
+      - image: deron73/ui:1.0
         name: ui
