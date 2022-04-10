@@ -3737,3 +3737,68 @@ yc compute instance delete logging
 
 
 </details>
+
+# **Лекция №27: Введение в Kubernetes #1**
+> _kubernetes-1_
+<details>
+  <summary>Введение в kubernetes</summary>
+
+## **Задание:**
+Установка и настройка Kubernetes.
+
+### Цель:
+В данном дз студент пройдет тренинг Kubernetes The Hard Way во время которого самостоятельно развернет все компоненты системы.
+В данном задании тренируются навыки: установки и запуска компонентов kubernetes.
+
+Описание/Пошаговая инструкция выполнения домашнего задания:
+Все действия описаны в методическом указании.
+
+Критерии оценки:
+0 б. - задание не выполнено
+1 б. - задание выполнено
+2 б. - выполнены все дополнительные задания
+
+---
+
+## **Выполнено:**
+
+### Создание примитивов
+
+Опишем приложение в контексте Kubernetes с помощью manifest- ов в YAML-формате. Основным примитивом будет Deployment. Основные задачи сущности Deployment:
+Создание Replication Controller-а (следит, чтобы число запущенных Pod-ов соответствовало описанному)
+Ведение истории версий запущенных Pod-ов (для различных стратегий деплоя, для возможностей отката)
+Описание процесса деплоя (стратегия, параметры стратегий)
+По ходу курса эти манифесты будут обновляться, а также появляться новые. Текущие файлы нужны для создания структуры и проверки работоспособности kubernetes-кластера.
+
+Создадим файл в kubernetes/reddit/post-deployment.yml:
+
+~~~yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: post
+  template:
+    metadata:
+      name: post
+      labels:
+        app: post
+    spec:
+      containers:
+      - image: deron73/post
+        name: post
+~~~
+
+Создадим аналогичные манифесты приложений:
+- [ui-deployment.yml](./kubernetes/reddit/ui-deployment.yml)
+- [comment-deployment.yml](./kubernetes/reddit/comment-deployment.yml)
+- [mongo-deployment.yml](./kubernetes/reddit/mongo-deployment.yml)
+
+## **Полезное:**
+
+
+</details>
