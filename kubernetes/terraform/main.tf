@@ -12,7 +12,7 @@ data "yandex_compute_image" "ubuntu-image" {
 
 resource "yandex_compute_instance" "k8s" {
   name  = "k8s-${count.index}"
-  count = var.instance_count
+  count = var.count_of_instances
 
   resources {
     cores  = 4
