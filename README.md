@@ -4015,6 +4015,16 @@ post-deployment-568f674bfb-npsjs      1/1     Running   0          18s
 ui-deployment-5779d9d64d-cqt8q        1/1     Running   0          3m31s
 ~~~
 
+Удалим ресурсы:
+
+~~~bash
+yc compute instance delete worker-node
+yc compute instance delete master-node
+~~~
+
+### Задание со ⭐
+- Опишите установку кластера k8s с помощью terraform и ansible
+= В директории kubernetes создайте директории terraform и ansible (все манифесты должны хранится там)
 
 ## **Полезное:**
 
