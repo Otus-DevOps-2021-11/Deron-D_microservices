@@ -54,8 +54,12 @@ resource "local_file" "inventory" {
   )
   filename = "../ansible/inventory.ini"
 
-  # provisioner "local-exec" {
-  #   command     = "ansible-playbook k8s_playbook.yml"
-  #   working_dir = "../ansible"
-  # }
+  provisioner "local-exec" {
+    command = "sleep 180"
+  }
+
+  provisioner "local-exec" {
+    command     = "ansible-playbook playbook.yml"
+    working_dir = "../ansible"
+  }
 }
