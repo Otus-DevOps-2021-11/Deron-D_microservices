@@ -10,3 +10,4 @@ jdauphant.nginx
 vault.key
 *.env
 bugged-code/
+inventory.ini

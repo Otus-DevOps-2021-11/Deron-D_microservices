@@ -2809,7 +2809,7 @@ prometheus:
     - '--storage.tsdb.retention=1d' # Задаем время хранения метрик в 1 день
   networks:
     - front_net
-    - back_net   
+    - back_net
 ...
 volumes:
   prometheus_data:
@@ -3841,7 +3841,7 @@ yc compute instance create \
   --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=40,type=network-ssd \
   --ssh-key ~/.ssh/id_rsa.pub
 
-  ...    
+  ...
   primary_v4_address:
     address: 10.128.0.5
     one_to_one_nat:
@@ -4024,9 +4024,49 @@ yc compute instance delete master-node
 
 ### Задание со ⭐
 - Опишите установку кластера k8s с помощью terraform и ansible
-= В директории kubernetes создайте директории terraform и ansible (все манифесты должны хранится там)
+- В директории kubernetes создайте директории terraform и ansible (все манифесты должны хранится там)
+
+### Выполнено
+
+В директории `kubernetes\terrafrom` описано создание инфраструктуры для последующего поднятия Kubernetes кластера
+с помощью Ansible ролей `kubernetes\ansible\roles`.
+Количество нод задается с помощью значения переменной 'count_of_instances' в `terraform.tfvars`.
+Первая нода определна как мастер нода
+В случае необходимости, требуемое количество мастер нод задается в `inventory.tpl`
+
+~~~bash
+terraform git:(kubernetes-1) ✗ terraform apply --auto-approve
+...
+local_file.inventory: Creation complete after 7m1s [id=c764955ad1cccad49d8e6be03741d15c84038b87]
+
+Apply complete! Resources: 4 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+external_ip_address_k8s = [
+  "51.250.64.37",
+  "51.250.82.16",
+  "51.250.65.241",
+]
+
+➜  terraform git:(kubernetes-1) ✗ ssh ubuntu@51.250.64.37 -i ~/.ssh/appuser
+Welcome to Ubuntu 18.04.6 LTS (GNU/Linux 4.15.0-112-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+New release '20.04.4 LTS' available.
+Run 'do-release-upgrade' to upgrade to it.
+
+Last login: Sat Apr 16 19:03:07 2022 from 194.8.47.118
+ubuntu@fhmqkn9roe6ksddrm90a:~$ kubectl get nodes
+NAME                   STATUS   ROLES    AGE   VERSION
+fhmqk72cgkfi6e6661nv   Ready    <none>   98s   v1.19.14
+fhmqkn9roe6ksddrm90a   Ready    master   2m    v1.19.14
+fhmrg9lb9lrbvis9a57q   Ready    <none>   98s   v1.19.14
+~~~
 
 ## **Полезное:**
-
+[Kubernetes Setup Using Ansible and Vagrant](https://kubernetes.io/blog/2019/03/15/kubernetes-setup-using-ansible-and-vagrant/)
 
 </details>
