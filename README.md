@@ -4031,7 +4031,7 @@ yc compute instance delete master-node
 В директории `kubernetes\terrafrom` описано создание инфраструктуры для последующего поднятия Kubernetes кластера
 с помощью Ansible ролей `kubernetes\ansible\roles`.
 Количество нод задается с помощью значения переменной 'count_of_instances' в `terraform.tfvars`.
-Первая нода определна как мастер нода
+Первая нода определена как мастер нода
 В случае необходимости, требуемое количество мастер нод задается в `inventory.tpl`
 
 ~~~bash
