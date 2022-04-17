@@ -4891,6 +4891,60 @@ kubectl apply -n dev -f kubernetes/reddit
 
 ## Yandex Cloud Managed Service for kubernetes
 
+В своей cloud console [https://console.cloud.yandex.ru/](https://console.cloud.yandex.ru/) cоздаем кластер Kubernetes и группу хостов.
+
+Подключимся к k8s для запуска нашего приложения
+
+~~~bash
+yc managed-kubernetes cluster get-credentials test-cluster --external
+
+Context 'yc-test-cluster' was added as default to kubeconfig '/home/dpp/.kube/config'.
+Check connection to cluster using 'kubectl cluster-info --kubeconfig /home/dpp/.kube/config'.
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl cluster-info --kubeconfig /home/dpp/.kube/config
+Kubernetes control plane is running at https://51.250.76.18
+CoreDNS is running at https://51.250.76.18/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+Metrics-server is running at https://51.250.76.18/api/v1/namespaces/kube-system/services/https:metrics-server:/proxy
+
+To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+~~~
+
+Также текущий контекст будет выставлен для подключения к этому кластеру. Убедиться можно, введя
+
+~~~bash
+Deron-D_microservices git:(kubernetes-2) ✗ kubectl config current-context
+yc-test-cluster
+~~~
+
+Запустим наше приложение в K8s
+~~~
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl apply -f ./kubernetes/reddit/dev-namespace.yml
+namespace/dev created
+~~~
+
+Задеплоим все компоненты приложения в namespace dev:
+
+~~~bash
+kubectl apply -f ./kubernetes/reddit/ -n dev
+~~~
+
+Найдем внешний IP-адрес любой ноды из кластера, либо в веб- консоли, либо External IP в выводе:
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl get nodes -o wide
+NAME                        STATUS   ROLES    AGE     VERSION    INTERNAL-IP   EXTERNAL-IP    OS-IMAGE             KERNEL-VERSION      CONTAINER-RUNTIME
+cl10km544djqdhbh7sf2-owum   Ready    <none>   7m47s   v1.19.15   10.128.0.13   51.250.4.178   Ubuntu 20.04.4 LTS   5.4.0-100-generic   docker://20.10.12
+cl10km544djqdhbh7sf2-oxof   Ready    <none>   7m46s   v1.19.15   10.128.0.24   51.250.2.63    Ubuntu 20.04.4 LTS   5.4.0-100-generic   docker://20.10.12
+~~~
+
+Найдем порт публикации сервиса ui:
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl describe service ui -n dev | grep NodePort
+Type:                     NodePort
+NodePort:                 <unset>  32092/TCP
+~~~
+
+
 ## **Полезное:**
 - [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
 - [minikube start](https://kubernetes.io/docs/tasks/tools/install-minikube/)
