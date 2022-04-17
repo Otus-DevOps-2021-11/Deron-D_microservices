@@ -4070,3 +4070,66 @@ fhmrg9lb9lrbvis9a57q   Ready    <none>   98s   v1.19.14
 [Kubernetes Setup Using Ansible and Vagrant](https://kubernetes.io/blog/2019/03/15/kubernetes-setup-using-ansible-and-vagrant/)
 
 </details>
+
+# **Лекция №28: Основные модели безопасности и контроллеры в Kubernetes**
+> _kubernetes-2_
+<details>
+  <summary>Kubernetes. Запуск кластера и приложения. Модель безопасности</summary>
+
+## **Задание:**
+Домашнее задание
+Установка и настройка yandex cloud Kubernetes Engine, настройка локального профиля администратора для yandex cloud. Работа с с контроллерами: StatefulSet, Deployment, DaemonSet
+
+Цель:
+В данном дз студент развернет кластер kubernetes в yandex cloud, настроит профиль администратора, поработает с различными контроллерами.
+В данном задании тренируются навыки: работы с кластером kubernetes в yandex cloud, настройки прав доступа, работы с контроллерами.
+
+Описание/Пошаговая инструкция выполнения домашнего задания:
+Все действия описаны в методическом указании.
+
+Критерии оценки:
+0 б. - задание не выполнено
+1 б. - задание выполнено
+2 б. - выполнены все дополнительные задания
+
+---
+## **План**
+- Развернуть локальное окружение для работы с Kubernetes
+- Развернуть Kubernetes в Yandex Cloud
+- Запустить reddit в Kubernetes
+
+## **Выполнено:**
+
+**Разворачиваем Kubernetes локально**
+
+Для дальнейшней работы нам нужно подготовить локальное окружение, которое будет состоять из:
+1. **kubectl** - фактически, главной утилиты для работы с Kubernets API (все, что делает kubectl, можно сделать с помощью HTTP-запросов к API k8s)
+2. **Директории ~/.kube** - содержит служебную информацию для kubectl (конфиги, кеши, схемы API)
+3. **minikube** - утилиты для разворачивания локальной инсталяции Kubernetes
+
+~~~bash
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+EOF
+sudo yum install -y kubectl
+...
+Установлен:
+  kubectl-1.23.5-0.x86_64
+
+Выполнено!
+
+kubectl version --client
+Client Version: version.Info{Major:"1", Minor:"23", GitVersion:"v1.23.5", GitCommit:"c285e781331a3785a7f436042c65c5641ce8a9e9", GitTreeState:"clean", BuildDate:"2022-03-16T15:58:47Z", GoVersion:"go1.17.8", Compiler:"gc", Platform:"linux/amd64"}
+~~~
+
+## **Полезное:**
+[Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
+[](https://kubernetes.io/docs/tasks/tools/install-minikube/)
+
+</details>
