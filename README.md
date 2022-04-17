@@ -4950,8 +4950,159 @@ NodePort:                 <unset>  32092/TCP
 
 ![kubernetes/k8s-2.png](kubernetes/k8s-2.png)
 
+### Удаляем ресурсы
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) yc k8s cluster list
++----------------------+--------------+---------------------+---------+---------+----------------------+--------------------+
+|          ID          |     NAME     |     CREATED AT      | HEALTH  | STATUS  |  EXTERNAL ENDPOINT   | INTERNAL ENDPOINT  |
++----------------------+--------------+---------------------+---------+---------+----------------------+--------------------+
+| cat86tvihaengll4a89q | test-cluster | 2022-04-17 16:36:03 | HEALTHY | RUNNING | https://51.250.76.18 | https://10.128.0.9 |
++----------------------+--------------+---------------------+---------+---------+----------------------+--------------------+
+
+➜  Deron-D_microservices git:(kubernetes-2) yc k8s cluster delete cat86tvihaengll4a89q
+done (53s)
+~~~
+
+### Задание со ⭐
+
+1. Разверните Kubernetes-кластер в Yandex cloud с помощью Terraform
+модуля
+2. Создайте YAML-манифесты для описания созданных сущностей для включения dashboard
+
+### Выполнено:
+
+1. Манифесты `terraform` для развертывания Kubernetes-кластера на Yandex Сloud находятся в `kubernetes\terraform-k8s`
+
+~~~bash
+➜  terraform-k8s git:(kubernetes-2) ✗ terraform init
+➜  terraform-k8s git:(kubernetes-2) ✗ terraform apply --auto-approve
+➜  terraform-k8s git:(kubernetes-2) ✗ yc k8s cluster list
++----------------------+---------+---------------------+---------+---------+----------------------+--------------------+
+|          ID          |  NAME   |     CREATED AT      | HEALTH  | STATUS  |  EXTERNAL ENDPOINT   | INTERNAL ENDPOINT  |
++----------------------+---------+---------------------+---------+---------+----------------------+--------------------+
+| cat836hjnjutb4k23nu3 | k8s-dev | 2022-04-17 18:31:41 | HEALTHY | RUNNING | https://51.250.82.52 | https://10.128.0.8 |
++----------------------+---------+---------------------+---------+---------+----------------------+--------------------+
+➜  terraform-k8s git:(kubernetes-2) ✗ yc managed-kubernetes cluster get-credentials k8s-dev --external
+
+Context 'yc-k8s-dev' was added as default to kubeconfig '/home/dpp/.kube/config'.
+Check connection to cluster using 'kubectl cluster-info --kubeconfig /home/dpp/.kube/config'.
+
+Note, that authentication depends on 'yc' and its config profile 'default'.
+To access clusters using the Kubernetes API, please use Kubernetes Service Account.
+➜  terraform-k8s git:(kubernetes-2) ✗ kubectl config current-context
+yc-k8s-dev
+~~~
+
+2. YAML-манифесты для описания созданных сущностей для включения dashboard находятся в `kubernetes\dashboard`
+
+Возьмем рекомендованный манифест:
+
+~~~bash
+curl https://raw.githubusercontent.com/kubernetes/dashboard/v2.5.0/aio/deploy/recommended.yaml -o dashboard.yml
+~~~
+
+Отредактируем 'dashboard.yml', добавим параметр 'NodePort':
+
+~~~yaml
+...
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+spec:
+  ports:
+    - port: 443
+      targetPort: 8443
+  selector:
+    k8s-app: kubernetes-dashboard
+  type: NodePort
+...
+~~~
+
+Деплоим и проверяем:
+
+~~~bash
+➜  dashboard git:(kubernetes-2) ✗ kubectl apply -f dashboard.yml
+namespace/kubernetes-dashboard created
+serviceaccount/kubernetes-dashboard created
+service/kubernetes-dashboard created
+secret/kubernetes-dashboard-certs created
+secret/kubernetes-dashboard-csrf created
+secret/kubernetes-dashboard-key-holder created
+configmap/kubernetes-dashboard-settings created
+role.rbac.authorization.k8s.io/kubernetes-dashboard created
+clusterrole.rbac.authorization.k8s.io/kubernetes-dashboard created
+rolebinding.rbac.authorization.k8s.io/kubernetes-dashboard created
+clusterrolebinding.rbac.authorization.k8s.io/kubernetes-dashboard created
+deployment.apps/kubernetes-dashboard created
+service/dashboard-metrics-scraper created
+deployment.apps/dashboard-metrics-scraper created
+
+➜  dashboard git:(kubernetes-2) ✗ kubectl get deployments -n kubernetes-dashboard
+NAME                        READY   UP-TO-DATE   AVAILABLE   AGE
+dashboard-metrics-scraper   1/1     1            1           32s
+kubernetes-dashboard        1/1     1            1           33s
+➜  dashboard git:(kubernetes-2) ✗ kubectl get pods -n kubernetes-dashboard
+NAME                                         READY   STATUS    RESTARTS   AGE
+dashboard-metrics-scraper-5b8896d7fc-vnc7g   1/1     Running   0          43s
+kubernetes-dashboard-cb988587b-tfn8d         1/1     Running   0          44s
+➜  dashboard git:(kubernetes-2) ✗ kubectl get services -n kubernetes-dashboard
+NAME                        TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)         AGE
+dashboard-metrics-scraper   ClusterIP   10.96.243.115   <none>        8000/TCP        65s
+kubernetes-dashboard        NodePort    10.96.230.197   <none>        443:30056/TCP   72s
+~~~
+
+Creating a Service Account & ClusterRoleBinding
+~~~bash
+➜  dashboard git:(kubernetes-2) ✗ kubectl apply -f dashboard-adminuser.yml
+serviceaccount/kube-admin created
+clusterrolebinding.rbac.authorization.k8s.io/admin-user created
+~~~
+
+Getting a Bearer Token
+~~~bash
+kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | grep 'kube-admin' | awk '{print $1}')
+Name:         kube-admin-token-f7ltw
+Namespace:    kube-system
+Labels:       <none>
+Annotations:  kubernetes.io/service-account.name: kube-admin
+              kubernetes.io/service-account.uid: 83bac53e-1837-4142-b8e2-b5ff4b717ec5
+
+Type:  kubernetes.io/service-account-token
+
+Data
+====
+ca.crt:     1066 bytes
+namespace:  11 bytes
+token:      ...
+~~~
+
+~~~bash
+kubectl get service -n kubernetes-dashboard | grep dashboard
+➜  dashboard git:(kubernetes-2) ✗ kubectl get service -n kubernetes-dashboard | grep dashboard
+dashboard-metrics-scraper   ClusterIP   10.96.243.115   <none>        8000/TCP        32m
+kubernetes-dashboard        NodePort    10.96.230.197   <none>        443:30056/TCP   32m
+~~~
+
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) kubectl proxy
+Starting to serve on 127.0.0.1:8001
+~~~
+
+Откроем страницу: [http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/](http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/)
+
+![kubernetes/k8s-3.png](kubernetes/k8s-3.png)
+![kubernetes/k8s-4.png](kubernetes/k8s-4.png)
+
 ## **Полезное:**
 - [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
 - [minikube start](https://kubernetes.io/docs/tasks/tools/install-minikube/)
+- [yandex_kubernetes_cluster](https://registry.terraform.io/providers/yandex-cloud/yandex/latest/docs/data-sources/datasource_kubernetes_cluster)
+- [Deploy and Access the Kubernetes Dashboard](https://kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard/)
+- [How to Install and Configure the Kubernetes Dashboard](https://www.liquidweb.com/kb/how-to-install-and-configure-the-kubernetes-dashboard/)
 
 </details>
