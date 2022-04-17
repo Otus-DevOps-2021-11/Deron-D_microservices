@@ -4944,6 +4944,11 @@ Type:                     NodePort
 NodePort:                 <unset>  32092/TCP
 ~~~
 
+Идем по адресу `http://<node-ip>:<NodePort>`
+
+![kubernetes/k8s-1.png](kubernetes/k8s-1.png)
+
+![kubernetes/k8s-2.png](kubernetes/k8s-2.png)
 
 ## **Полезное:**
 - [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
