@@ -5106,3 +5106,42 @@ Starting to serve on 127.0.0.1:8001
 - [How to Install and Configure the Kubernetes Dashboard](https://www.liquidweb.com/kb/how-to-install-and-configure-the-kubernetes-dashboard/)
 
 </details>
+
+# **Лекция №30: Ingress-контроллеры и сервисы в Kubernetes**
+> _kubernetes-3_
+<details>
+  <summary>Kubernetes. Networks, Storages.</summary>
+
+## **Задание:**
+Домашнее задание
+Настройка балансировщиков нагрузки в Kubernetes и SSL­Terminating.
+
+Цель:
+В данном дз студент научится подключать и использовать удаленные хранилища, публиковать сервисы.
+В данном задании тренируются навыки: использования хранилищ, работы с Ingress контроллером.
+
+Описание/Пошаговая инструкция выполнения домашнего задания:
+Все действия описаны в методическом указании.
+
+Критерии оценки:
+0 б. - задание не выполнено
+1 б. - задание выполнено
+2 б. - выполнены все дополнительные задания
+
+---
+## **План**
+- Ingress Controller
+- Ingress
+- Secret
+- TLS
+- LoadBalancer Service
+- Network Policies
+- PersistentVolumes
+- PersistentVolumeClaims
+
+
+## **Выполнено:**
+
+## **Полезное:**
+
+</details>
