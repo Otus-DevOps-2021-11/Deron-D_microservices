@@ -2809,7 +2809,7 @@ prometheus:
     - '--storage.tsdb.retention=1d' # Задаем время хранения метрик в 1 день
   networks:
     - front_net
-    - back_net   
+    - back_net
 ...
 volumes:
   prometheus_data:
@@ -3735,5 +3735,338 @@ yc compute instance delete logging
 
 [Grok Parser for Fluentd ](https://www.rubydoc.info/gems/fluent-plugin-grok-parser)
 
+
+</details>
+
+# **Лекция №27: Введение в Kubernetes #1**
+> _kubernetes-1_
+<details>
+  <summary>Введение в kubernetes</summary>
+
+## **Задание:**
+Установка и настройка Kubernetes.
+
+### Цель:
+В данном дз студент пройдет тренинг Kubernetes The Hard Way во время которого самостоятельно развернет все компоненты системы.
+В данном задании тренируются навыки: установки и запуска компонентов kubernetes.
+
+Описание/Пошаговая инструкция выполнения домашнего задания:
+Все действия описаны в методическом указании.
+
+Критерии оценки:
+0 б. - задание не выполнено
+1 б. - задание выполнено
+2 б. - выполнены все дополнительные задания
+
+---
+
+## **Выполнено:**
+
+### Создание примитивов
+
+Опишем приложение в контексте Kubernetes с помощью manifest- ов в YAML-формате. Основным примитивом будет Deployment. Основные задачи сущности Deployment:
+Создание Replication Controller-а (следит, чтобы число запущенных Pod-ов соответствовало описанному)
+Ведение истории версий запущенных Pod-ов (для различных стратегий деплоя, для возможностей отката)
+Описание процесса деплоя (стратегия, параметры стратегий)
+По ходу курса эти манифесты будут обновляться, а также появляться новые. Текущие файлы нужны для создания структуры и проверки работоспособности kubernetes-кластера.
+
+Создадим файл в kubernetes/reddit/post-deployment.yml:
+
+~~~yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: post
+  template:
+    metadata:
+      name: post
+      labels:
+        app: post
+    spec:
+      containers:
+      - image: deron73/post
+        name: post
+~~~
+
+Создадим аналогичные манифесты приложений:
+- [ui-deployment.yml](./kubernetes/reddit/ui-deployment.yml)
+- [comment-deployment.yml](./kubernetes/reddit/comment-deployment.yml)
+- [mongo-deployment.yml](./kubernetes/reddit/mongo-deployment.yml)
+
+
+### Установка k8s на двух нодах при помощи утилиты kubeadm
+
+Характеристики нод следующие:
+- RAM 4
+- CPU 4
+- SSD 40 GB
+
+Устанавливаем: docker v=19.03 и kube* v=1.19:
+
+Инструкции:
+
+> [https://docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/ubuntu/)
+
+> [https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/)
+
+Создаем две ноды ubuntu-1804-lts:
+
+~~~bash
+yc compute instance create \
+  --name master-node \
+  --cores=4 \
+  --memory=4 \
+  --zone ru-central1-a \
+  --network-interface subnet-name=default-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=40,type=network-ssd \
+  --ssh-key ~/.ssh/id_rsa.pub
+  ...
+  primary_v4_address:
+    address: 10.128.0.13
+    one_to_one_nat:
+      address: 51.250.14.162
+  ...
+
+yc compute instance create \
+  --name worker-node \
+  --cores=4 \
+  --memory=4 \
+  --zone ru-central1-a \
+  --network-interface subnet-name=default-ru-central1-a,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=40,type=network-ssd \
+  --ssh-key ~/.ssh/id_rsa.pub
+
+  ...
+  primary_v4_address:
+    address: 10.128.0.5
+    one_to_one_nat:
+      address: 51.250.71.6
+  ...
+~~~
+
+Установим необходимое ПО на обеих нодах:
+
+~~~bash
+sudo apt-get remove docker docker-engine docker.io containerd runc
+
+sudo apt-get update
+sudo apt-get install apt-transport-https ca-certificates curl gnupg lsb-release
+
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+sudo apt-get update
+#sudo apt-get install -y docker-ce docker-ce-cli containerd.io kubelet kubeadm kubectl
+
+sudo apt-get install -y  --allow-downgrades docker-ce=5:19.03.15~3-0~ubuntu-bionic docker-ce-cli=5:19.03.15~3-0~ubuntu-bionic containerd.io kubelet=1.19.14-00 kubeadm=1.19.14-00 kubectl=1.19.14-00
+
+~~~
+
+Узнать доступные версии пакетов docker:
+
+~~~bash
+apt-cache madison docker-ce
+~~~
+
+Установим кластер k8s с помощью kubeadm:
+
+~~~bash
+sudo kubeadm init --apiserver-cert-extra-sans=51.250.14.162 --apiserver-advertise-address=0.0.0.0 --control-plane-endpoint=51.250.14.162 --pod-network-cidr=10.244.0.0/16
+
+Your Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+You can now join any number of control-plane nodes by copying certificate authorities
+and service account keys on each node and then running the following as root:
+
+  kubeadm join 51.250.14.162:6443 --token ukjxvc.28keatfd8geiox94 \
+    --discovery-token-ca-cert-hash sha256:c11cf566e604085dbebb1c3700d752a67c1fe8f227b4d7f2cfdab8c7bc232686 \
+    --control-plane
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 51.250.14.162:6443 --token ukjxvc.28keatfd8geiox94 \
+    --discovery-token-ca-cert-hash sha256:c11cf566e604085dbebb1c3700d752a67c1fe8f227b4d7f2cfdab8c7bc232686
+
+~~~
+
+На мастер ноде
+`To start using your cluster, you need to run the following as a regular user`:
+~~~bash
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+~~~
+
+Добавим worker ноду в кластер:
+
+~~~bash
+sudo kubeadm join 51.250.14.162:6443 --token ukjxvc.28keatfd8geiox94 \
+>     --discovery-token-ca-cert-hash sha256:c11cf566e604085dbebb1c3700d752a67c1fe8f227b4d7f2cfdab8c7bc232686
+[preflight] Running pre-flight checks
+	[WARNING IsDockerSystemdCheck]: detected "cgroupfs" as the Docker cgroup driver. The recommended driver is "systemd". Please follow the guide at https://kubernetes.io/docs/setup/cri/
+	[WARNING SystemVerification]: this Docker version is not on the list of validated versions: 20.10.14. Latest validated version: 19.03
+[preflight] Reading configuration from the cluster...
+[preflight] FYI: You can look at this config file with 'kubectl -n kube-system get cm kubeadm-config -oyaml'
+[kubelet-start] Writing kubelet configuration to file "/var/lib/kubelet/config.yaml"
+[kubelet-start] Writing kubelet environment file with flags to file "/var/lib/kubelet/kubeadm-flags.env"
+[kubelet-start] Starting the kubelet
+[kubelet-start] Waiting for the kubelet to perform the TLS Bootstrap...
+
+This node has joined the cluster:
+* Certificate signing request was sent to apiserver and a response was received.
+* The Kubelet was informed of the new secure connection details.
+
+Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
+~~~
+
+В качестве проверки воспользуемся командой:
+
+~~~bash
+yc-user@fhmkc6s37fecdbcg16u3:~$ kubectl get nodes
+NAME                   STATUS     ROLES    AGE     VERSION
+fhm2qiirai320t0iv2hp   NotReady   <none>   4m11s   v1.19.14
+fhmkc6s37fecdbcg16u3   NotReady   master   13m     v1.19.14
+~~~
+
+Наши ноды находятся в статусе NotReady, посмотрим состояние ноды:
+
+~~~bash
+kubectl describe node fhm2qiirai320t0iv2hp
+...
+  Ready            False   Sun, 10 Apr 2022 19:12:51 +0000   Sun, 10 Apr 2022 19:07:20 +0000   KubeletNotReady              runtime network not ready: NetworkReady=false reason:NetworkPluginNotReady message:docker: network plugin is not ready: cni config uninitialized
+...
+~~~
+
+
+Установим сетевой плагин:
+> [Install Calico networking and network policy for on-premises deployments](https://projectcalico.docs.tigera.io/getting-started/kubernetes/self-managed-onprem/onpremises)
+
+~~~bash
+curl https://docs.projectcalico.org/manifests/calico.yaml -O
+# Нужно изменить параметр в ранее скачанном
+# файле calico.yaml
+# Значение CALICO_IPV4POOL_CIDR должно быть 10.244.0.0/16
+
+kubectl apply -f calico.yaml
+
+~~~
+
+Проверим статусы нод и подов. Удостоверимся, что они в норме
+~~~bash
+kubectl get nodes
+NAME                   STATUS   ROLES    AGE   VERSION
+fhm2qiirai320t0iv2hp   Ready    <none>   16m   v1.19.14
+fhmkc6s37fecdbcg16u3   Ready    master   25m   v1.19.14
+
+kubectl get pods --all-namespaces
+NAMESPACE     NAME                                           READY   STATUS    RESTARTS   AGE
+kube-system   calico-kube-controllers-858c9597c8-zp7nj       1/1     Running   0          4m39s
+kube-system   calico-node-mdhc8                              1/1     Running   0          4m39s
+kube-system   calico-node-nbl8k                              1/1     Running   0          4m39s
+kube-system   coredns-f9fd979d6-tv4zr                        1/1     Running   0          29m
+kube-system   coredns-f9fd979d6-z6xb5                        1/1     Running   0          29m
+kube-system   etcd-fhmkc6s37fecdbcg16u3                      1/1     Running   0          29m
+kube-system   kube-apiserver-fhmkc6s37fecdbcg16u3            1/1     Running   0          29m
+kube-system   kube-controller-manager-fhmkc6s37fecdbcg16u3   1/1     Running   0          29m
+kube-system   kube-proxy-5wp8f                               1/1     Running   0          29m
+kube-system   kube-proxy-q6qxj                               1/1     Running   0          20m
+kube-system   kube-scheduler-fhmkc6s37fecdbcg16u3            1/1     Running   0          29m
+~~~
+
+Проверим, что созданные вами ранее манифесты применяются корректно:
+
+~~~bash
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/ui-deployment.yml -O
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/post-deployment.yml -O
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/comment-deployment.yml -O
+curl https://raw.githubusercontent.com/Otus-DevOps-2021-11/Deron-D_microservices/kubernetes-1/kubernetes/reddit/mongo-deployment.yml -O
+
+kubectl apply -f ui-deployment.yml
+kubectl apply -f post-deployment.yml
+kubectl apply -f mongo-deployment.yml
+kubectl apply -f comment-deployment.yml
+
+yc-user@fhmkc6s37fecdbcg16u3:~$ kubectl get pods
+NAME                                  READY   STATUS    RESTARTS   AGE
+comment-deployment-7b68c7f65b-mjdvr   1/1     Running   0          75s
+mongo-deployment-7f64d64756-4swzp     1/1     Running   0          7m49s
+post-deployment-568f674bfb-npsjs      1/1     Running   0          18s
+ui-deployment-5779d9d64d-cqt8q        1/1     Running   0          3m31s
+~~~
+
+Удалим ресурсы:
+
+~~~bash
+yc compute instance delete worker-node
+yc compute instance delete master-node
+~~~
+
+### Задание со ⭐
+- Опишите установку кластера k8s с помощью terraform и ansible
+- В директории kubernetes создайте директории terraform и ansible (все манифесты должны хранится там)
+
+### Выполнено
+
+В директории `kubernetes\terrafrom` описано создание инфраструктуры для последующего поднятия Kubernetes кластера
+с помощью Ansible ролей `kubernetes\ansible\roles`.
+Количество нод задается с помощью значения переменной 'count_of_instances' в `terraform.tfvars`.
+Первая нода определена как мастер нода.
+В случае необходимости, требуемое количество мастер нод задается в `inventory.tpl`
+
+~~~bash
+terraform git:(kubernetes-1) ✗ terraform apply --auto-approve
+...
+local_file.inventory: Creation complete after 7m1s [id=c764955ad1cccad49d8e6be03741d15c84038b87]
+
+Apply complete! Resources: 4 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+external_ip_address_k8s = [
+  "51.250.64.37",
+  "51.250.82.16",
+  "51.250.65.241",
+]
+
+➜  terraform git:(kubernetes-1) ✗ ssh ubuntu@51.250.64.37 -i ~/.ssh/appuser
+Welcome to Ubuntu 18.04.6 LTS (GNU/Linux 4.15.0-112-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+New release '20.04.4 LTS' available.
+Run 'do-release-upgrade' to upgrade to it.
+
+Last login: Sat Apr 16 19:03:07 2022 from 194.8.47.118
+ubuntu@fhmqkn9roe6ksddrm90a:~$ kubectl get nodes
+NAME                   STATUS   ROLES    AGE   VERSION
+fhmqk72cgkfi6e6661nv   Ready    <none>   98s   v1.19.14
+fhmqkn9roe6ksddrm90a   Ready    master   2m    v1.19.14
+fhmrg9lb9lrbvis9a57q   Ready    <none>   98s   v1.19.14
+~~~
+
+## **Полезное:**
+[Kubernetes Setup Using Ansible and Vagrant](https://kubernetes.io/blog/2019/03/15/kubernetes-setup-using-ansible-and-vagrant/)
 
 </details>

@@ -1,0 +1,4 @@
+---
+# defaults file for roles/calico_install
+calico_ipv4pool_cidr: "10.244.0.0/16"
+k8s_user: ubuntu

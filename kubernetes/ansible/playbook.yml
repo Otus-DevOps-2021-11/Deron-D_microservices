@@ -1,0 +1,20 @@
+---
+- name: Deploy docker and k8s on nodes
+  hosts: all
+  become: true
+  roles:
+    - docker_install
+    - k8s_install
+
+- name: Master init
+  hosts: master
+  become: true
+  roles:
+    - cluster_init
+    - calico_install
+
+- name: Joining the node to the Kubernetes cluster
+  hosts: workers
+  become: true
+  roles:
+    - join_cluster
