@@ -4070,3 +4070,1039 @@ fhmrg9lb9lrbvis9a57q   Ready    <none>   98s   v1.19.14
 [Kubernetes Setup Using Ansible and Vagrant](https://kubernetes.io/blog/2019/03/15/kubernetes-setup-using-ansible-and-vagrant/)
 
 </details>
+
+# **Лекция №28: Основные модели безопасности и контроллеры в Kubernetes**
+> _kubernetes-2_
+<details>
+  <summary>Kubernetes. Запуск кластера и приложения. Модель безопасности</summary>
+
+## **Задание:**
+Домашнее задание
+Установка и настройка yandex cloud Kubernetes Engine, настройка локального профиля администратора для yandex cloud. Работа с с контроллерами: StatefulSet, Deployment, DaemonSet
+
+Цель:
+В данном дз студент развернет кластер kubernetes в yandex cloud, настроит профиль администратора, поработает с различными контроллерами.
+В данном задании тренируются навыки: работы с кластером kubernetes в yandex cloud, настройки прав доступа, работы с контроллерами.
+
+Описание/Пошаговая инструкция выполнения домашнего задания:
+Все действия описаны в методическом указании.
+
+Критерии оценки:
+0 б. - задание не выполнено
+1 б. - задание выполнено
+2 б. - выполнены все дополнительные задания
+
+---
+## **План**
+- Развернуть локальное окружение для работы с Kubernetes
+- Развернуть Kubernetes в Yandex Cloud
+- Запустить reddit в Kubernetes
+
+## **Выполнено:**
+
+**Разворачиваем Kubernetes локально**
+
+Для дальнейшней работы нам нужно подготовить локальное окружение, которое будет состоять из:
+1. **kubectl** - фактически, главной утилиты для работы с Kubernets API (все, что делает kubectl, можно сделать с помощью HTTP-запросов к API k8s)
+2. **Директории ~/.kube** - содержит служебную информацию для kubectl (конфиги, кеши, схемы API)
+3. **minikube** - утилиты для разворачивания локальной инсталяции Kubernetes
+
+~~~bash
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+EOF
+sudo yum install -y kubectl
+...
+Установлен:
+  kubectl-1.23.5-0.x86_64
+
+Выполнено!
+
+kubectl version --client
+Client Version: version.Info{Major:"1", Minor:"23", GitVersion:"v1.23.5", GitCommit:"c285e781331a3785a7f436042c65c5641ce8a9e9", GitTreeState:"clean", BuildDate:"2022-03-16T15:58:47Z", GoVersion:"go1.17.8", Compiler:"gc", Platform:"linux/amd64"}
+~~~
+
+**Установка Minikube**
+
+~~~bash
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
+sudo rpm -Uvh minikube-latest.x86_64.rpm
+~~~
+
+**Запустим наш Minikube-кластер**
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ minikube start --kubernetes-version 1.19.7
+😄  minikube v1.25.2 на Centos 8.5.2111
+✨  Automatically selected the docker driver. Other choices: ssh, none
+👍  Запускается control plane узел minikube в кластере minikube
+🚜  Скачивается базовый образ ...
+💾  Скачивается Kubernetes v1.19.7 ...
+    > gcr.io/k8s-minikube/kicbase: 379.06 MiB / 379.06 MiB  100.00% 298.83 KiB
+    > preloaded-images-k8s-v17-v1...: 484.42 MiB / 484.42 MiB  100.00% 333.93 K
+🔥  Creating docker container (CPUs=2, Memory=3800MB) ...
+🐳  Подготавливается Kubernetes v1.19.7 на Docker 20.10.12 ...
+    ▪ kubelet.housekeeping-interval=5m
+    ▪ Generating certificates and keys ...
+    ▪ Booting up control plane ...
+    ▪ Configuring RBAC rules ...
+🔎  Компоненты Kubernetes проверяются ...
+    ▪ Используется образ gcr.io/k8s-minikube/storage-provisioner:v5
+🌟  Включенные дополнения: storage-provisioner, default-storageclass
+
+❗  /usr/bin/kubectl is version 1.23.5, which may have incompatibilites with Kubernetes 1.19.7.
+    ▪ Want kubectl v1.19.7? Try 'minikube kubectl -- get pods -A'
+🏄  Готово! kubectl настроен для использования кластера "minikube" и "default" пространства имён по умолчанию
+~~~
+
+Наш Minikube-кластер развернут. При этом автоматически был
+настроен конфиг kubectl. Проверим, что это так:
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl cluster-info
+Kubernetes control plane is running at https://192.168.49.2:8443
+KubeDNS is running at https://192.168.49.2:8443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl get nodes
+
+NAME       STATUS   ROLES    AGE     VERSION
+minikube   Ready    master   5m27s   v1.19.7
+
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl get po -A
+
+NAMESPACE     NAME                               READY   STATUS    RESTARTS   AGE
+kube-system   coredns-f9fd979d6-295s5            1/1     Running   0          4m51s
+kube-system   etcd-minikube                      1/1     Running   0          5m7s
+kube-system   kube-apiserver-minikube            1/1     Running   0          5m7s
+kube-system   kube-controller-manager-minikube   1/1     Running   0          5m6s
+kube-system   kube-proxy-z8m8h                   1/1     Running   0          4m51s
+kube-system   kube-scheduler-minikube            1/1     Running   0          5m6s
+kube-system   storage-provisioner                1/1     Running   0          5m6s
+~~~
+
+**Kubectl**
+Конфигурация kubectl - это контекст.
+Контекст - это комбинация:
+- cluster - API-сервер
+- user - пользователь для подключения к кластеру
+- namespace - область видимости (не обязательно, по умолчанию default)
+Информацию о контекстах kubectl сохраняет в файле ~/.kube/config
+
+<details open>
+<summary>~/.kube/config</summary>
+
+~~~yml
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority: /home/dpp/.minikube/ca.crt
+    extensions:
+    - extension:
+        last-update: Sun, 17 Apr 2022 10:07:00 MSK
+        provider: minikube.sigs.k8s.io
+        version: v1.25.2
+      name: cluster_info
+    server: https://192.168.49.2:8443
+  name: minikube
+contexts:
+- context:
+    cluster: minikube
+    extensions:
+    - extension:
+        last-update: Sun, 17 Apr 2022 10:07:00 MSK
+        provider: minikube.sigs.k8s.io
+        version: v1.25.2
+      name: context_info
+    namespace: default
+    user: minikube
+  name: minikube
+current-context: minikube
+kind: Config
+preferences: {}
+users:
+- name: minikube
+  user:
+    client-certificate: /home/dpp/.minikube/profiles/minikube/client.crt
+    client-key: /home/dpp/.minikube/profiles/minikube/client.key
+~~~
+
+</details>
+
+**Запустим приложение**
+
+Для работы приложения в kubernetes, нам необходимо описать их желаемое состояние либо в YAML-манифестах, либо с помощью командной строки.
+Всю конфигурацию поместим в каталог `./kubernetes/reddit` внутри вашего репозитория
+
+Запустим в Minikube ui-компонент
+~~~bash
+➜  reddit git:(kubernetes-2) ✗ kubectl apply -f ui-deployment.yml
+deployment.apps/ui created
+
+➜  reddit git:(kubernetes-2) ✗ kubectl get deployment
+NAME   READY   UP-TO-DATE   AVAILABLE   AGE
+ui     3/3     3            3           4m52s
+~~~
+
+Пока что мы не можем использовать наше приложение полностью,
+потому что никак не настроена сеть для общения с ним.
+Но kubectl умеет пробрасывать сетевые порты POD-ов на локальную машину
+Найдем, используя selector, POD-ы приложения
+
+~~~bash
+kubectl get pods --selector component=ui
+NAME                 READY   STATUS    RESTARTS   AGE
+ui-6fdfcbf9c-g9jss   1/1     Running   0          12m
+ui-6fdfcbf9c-kz4vr   1/1     Running   0          12m
+ui-6fdfcbf9c-xqn6n   1/1     Running   0          12m
+
+kubectl port-forward ui-6fdfcbf9c-g9jss 8080:9292
+Forwarding from 127.0.0.1:8080 -> 9292
+Forwarding from [::1]:8080 -> 9292
+Handling connection for 8080
+~~~
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) curl localhost:8080
+~~~
+
+<details open>
+<summary>html</summary>
+```html
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta content='IE=Edge,chrome=1' http-equiv='X-UA-Compatible'>
+<meta content='width=device-width, initial-scale=1.0' name='viewport'>
+<title>Microservices Reddit :: All posts</title>
+<link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css' integrity='sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7' rel='stylesheet' type='text/css'>
+<link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css' integrity='sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r' rel='stylesheet' type='text/css'>
+<script crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js' integrity='sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS'></script>
+</head>
+<body>
+<div class='navbar navbar-default navbar-static-top'>
+<div class='container'>
+<button class='navbar-toggle' data-target='.navbar-responsive-collapse' data-toggle='collapse' type='button'>
+<span class='icon-bar'></span>
+<span class='icon-bar'></span>
+<span class='icon-bar'></span>
+</button>
+<a class='navbar-brand' href='/'>Microservices Reddit in  ui-6fdfcbf9c-g9jss container</a>
+<div class='navbar-collapse collapse navbar-responsive-collapse'></div>
+</div>
+</div>
+<div class='container'>
+<div class='row'>
+<div class='col-lg-9'>
+<div class='alert alert-danger'>
+<strong>Can't show blog posts, some problems with the post service. <a href="." class="alert-link">Refresh?</a></strong>
+</div>
+
+</div>
+<div class='col-lg-3'>
+<div class='well sidebar-nav'>
+<h3>Menu</h3>
+<ul class='nav nav-list'>
+<li>
+<a href='/'>All posts</a>
+</li>
+<li>
+<a href='/new'>New post</a>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>
+```
+</details>
+
+UI работает, подключим остальные компоненты
+
+~~~bash
+➜  reddit git:(kubernetes-2) ✗ kubectl apply -f comment-deployment.yml
+deployment.apps/comment created
+
+➜  reddit git:(kubernetes-2) ✗ kubectl get pods --selector component=comment
+NAME                      READY   STATUS    RESTARTS   AGE
+comment-78bdc56b7-5t7rk   1/1     Running   0          6m29s
+comment-78bdc56b7-94fjc   1/1     Running   0          6m29s
+comment-78bdc56b7-tvf7t   1/1     Running   0          6m29s
+
+➜  reddit git:(kubernetes-2) ✗ kubectl port-forward ui-6fdfcbf9c-g9jss 8080:9292
+
+Forwarding from 127.0.0.1:8080 -> 9292
+Forwarding from [::1]:8080 -> 9292
+Handling connection for 8080
+
+curl http://localhost:8080/healthcheck
+{"status":0,"dependent_services":{"comment":0,"post":0},"version":"0.0.1"}%
+~~~
+
+Сконфигурируем Deployment компонента post подобным же образом
+
+~~~bash
+➜  reddit git:(kubernetes-2) ✗ kubectl apply -f post-deployment.yml
+deployment.apps/post created
+
+➜  reddit git:(kubernetes-2) ✗ kubectl get pods --selector component=post
+NAME                    READY   STATUS    RESTARTS   AGE
+post-656c78946c-48lf2   1/1     Running   0          5m54s
+post-656c78946c-4rvq6   1/1     Running   0          5m54s
+post-656c78946c-w5jg6   1/1     Running   0          5m54s
+
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl port-forward post-656c78946c-w5jg6 8080:5000
+Forwarding from 127.0.0.1:8080 -> 5000
+Forwarding from [::1]:8080 -> 5000
+Handling connection for 8080
+
+➜  reddit git:(kubernetes-2) ✗ curl http://localhost:8080/healthcheck
+{"status": 0, "dependent_services": {"postdb": 0}, "version": "0.0.2"}%
+~~~
+
+### MongoDB
+
+Разместим базу данных, задав описание в манифесте `reddit\mongo-deployment.yml`.
+Все похоже, но меняются только образы и значения label-ов
+
+Также примонтируем стандартный Volume для хранения данных вне
+контейнера
+~~~yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+...
+    spec:
+      containers:
+      - image: mongo:3.2
+        name: mongo
+        volumeMounts:
+        - name: mongo-persistent-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-persistent-storage
+        emptyDir: {}
+~~~
+
+~~~bash
+➜  reddit git:(kubernetes-2) ✗ kubectl apply -f mongo-deployment.yml
+deployment.apps/mongo created
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl get pods
+NAME                      READY   STATUS    RESTARTS   AGE
+comment-78bdc56b7-5t7rk   1/1     Running   0          4h50m
+comment-78bdc56b7-94fjc   1/1     Running   0          4h50m
+comment-78bdc56b7-tvf7t   1/1     Running   0          4h50m
+mongo-77d8cfd6d6-7sf4p    1/1     Running   0          4h22m
+post-656c78946c-48lf2     1/1     Running   0          4h34m
+post-656c78946c-4rvq6     1/1     Running   0          4h34m
+post-656c78946c-w5jg6     1/1     Running   0          4h34m
+ui-6fdfcbf9c-g9jss        1/1     Running   0          5h22m
+ui-6fdfcbf9c-kz4vr        1/1     Running   0          5h22m
+ui-6fdfcbf9c-xqn6n        1/1     Running   0          5h22m
+~~~
+
+### Services
+
+В текущем состоянии приложение не будет работать, так его компоненты ещё не знают как найти друг друга
+Для связи компонентов между собой и с внешним миром используется объект Service - абстракция,
+которая определяет набор POD-ов (Endpoints) и способ доступа к ним.
+Для связи ui с post и comment нужно создать им по объекту Service
+
+Когда объект service будет создан:.
+В DNS появится запись для comment
+При обращении на адрес post:9292 изнутри любого из POD-ов текущего namespace нас переправит на 9292-ый порт одного из POD-ов приложения post, выбранных по label-ам
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl get service
+NAME         TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
+comment      ClusterIP   10.105.6.206     <none>        9292/TCP   23s
+kubernetes   ClusterIP   10.96.0.1        <none>        443/TCP    6h5m
+post         ClusterIP   10.109.162.108   <none>        5000/TCP   23s
+~~~
+
+По label-ам должны были быть найдены соответствующие POD-ы.
+Посмотреть можно с помощью:
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl describe service comment  | grep Endpoints
+Endpoints:         172.17.0.6:9292,172.17.0.7:9292,172.17.0.8:9292
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl exec post-656c78946c-48lf2 -- nslookup comment
+
+nslookup: can't resolve '(null)': Name does not resolve
+Name:      comment
+Address 1: 10.105.6.206
+~~~
+
+Post и Comment также используют mongodb, следовательно ей тоже нужен объект Service.
+[mongodb-service.yml](./kubernetes/reddit/mongodb-service.yml)
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl apply -f kubernetes/reddit
+deployment.apps/comment unchanged
+service/comment unchanged
+deployment.apps/mongo unchanged
+service/mongodb created
+deployment.apps/post unchanged
+service/post unchanged
+deployment.apps/ui unchanged
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl get service
+NAME         TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)     AGE
+comment      ClusterIP   10.105.6.206     <none>        9292/TCP    29m
+kubernetes   ClusterIP   10.96.0.1        <none>        443/TCP     6h34m
+mongodb      ClusterIP   10.105.146.178   <none>        27017/TCP   9s
+post         ClusterIP   10.109.162.108   <none>        5000/TCP    29m
+~~~
+
+
+Пробрасываем порт на ui pod
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl get pods
+NAME                      READY   STATUS    RESTARTS   AGE
+comment-78bdc56b7-5t7rk   1/1     Running   0          5h32m
+comment-78bdc56b7-94fjc   1/1     Running   0          5h32m
+comment-78bdc56b7-tvf7t   1/1     Running   0          5h32m
+mongo-77d8cfd6d6-7sf4p    1/1     Running   0          5h4m
+post-656c78946c-48lf2     1/1     Running   0          5h16m
+post-656c78946c-4rvq6     1/1     Running   0          5h16m
+post-656c78946c-w5jg6     1/1     Running   0          5h16m
+ui-6fdfcbf9c-g9jss        1/1     Running   0          6h4m
+ui-6fdfcbf9c-kz4vr        1/1     Running   0          6h4m
+ui-6fdfcbf9c-xqn6n        1/1     Running   0          6h4m
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl port-forward ui-6fdfcbf9c-g9jss 9292:9292
+Forwarding from 127.0.0.1:9292 -> 9292
+Forwarding from [::1]:9292 -> 9292
+Handling connection for 9292
+~~~
+
+Приложение ищет совсем другой адрес:comment_db, а не mongodb Аналогично и сервис comment ищет post_db
+Эти адреса заданы в их Dockerfile-ах в виде переменных окружения:
+~~~Dockerfile
+post/Dockerfile
+...
+ENV POST_DATABASE_HOST=post
+comment/Dockerfile
+...
+ENV COMMENT_DATABASE_HOST=comment_db
+~~~
+
+В Docker Swarm проблема доступа к одному ресурсу под разными
+именами решалась с помощью сетевых алиасов.
+В Kubernetes такого функционала нет. Мы эту проблему можем решить с помощью тех же Service-ов
+
+Сделаем Service для БД comment 'comment-mongodb-service.yml'
+~~~yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comment-db
+  labels:
+    app: reddit
+    component: mongo
+    comment-db: "true"
+spec:
+  ports:
+  - port: 27017
+    protocol: TCP
+    targetPort: 27017
+  selector:
+    app: reddit
+    component: mongo
+    comment-db: "true"
+~~~
+
+Так же придется обновить файл deployment для mongodb, чтобы
+новый Service смог найти нужный POD
+~~~yml
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app: reddit
+    component: mongo
+    comment-db: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  template:
+    metadata:
+      name: mongo
+      labels:
+        app: reddit
+        component: mongo
+        comment-db: "true"
+    spec:
+      containers:
+      - image: mongo:3.2
+        name: mongo
+        volumeMounts:
+        - name: mongo-persistent-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-persistent-storage
+        emptyDir: {}
+~~~
+
+Зададим pod-ам comment переменную окружения для обращения к базе
+~~~yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comment
+  labels:
+    app: reddit
+    component: comment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reddit
+      component: comment
+  template:
+    metadata:
+      name: comment
+      labels:
+        app: reddit
+        component: comment
+    spec:
+      containers:
+      - image: deron73/comment:1.0
+        name: comment
+        env:
+        - name: COMMENT_DATABASE_HOST
+          value: comment-db
+~~~
+
+Мы сделали базу доступной для comment
+Проделаем аналогичные же действия для post-сервиса.
+Название сервиса должно быть post-db.
+
+
+Создадим все новые объекты с помощью
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl apply -f kubernetes/reddit
+~~~
+
+### Service
+Нам нужно как-то обеспечить доступ к ui-сервису снаружи. Для
+этого нам понадобится Service для UI-компонента
+~~~yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  labels:
+    app: reddit
+    component: ui
+spec:
+  type: NodePort # Главное отличие - тип сервиса NodePort
+  ports:
+  - nodePort: 32092
+    port: 9292
+    protocol: TCP
+    targetPort: 9292
+  selector:
+      app: reddit
+      component: ui
+
+~~~
+Т. е. в описании service
+NodePort - для доступа снаружи кластера port - для доступа к сервису изнутри кластера
+
+По-умолчанию все сервисы имеют тип ClusterIP - это значит, что сервис располагается на внутреннем диапазоне IP-адресов кластера. Снаружи до него нет доступа.
+Тип NodePort - на каждой ноде кластера открывает порт из диапазона 30000-32767 и переправляет трафик с этого порта на тот, который указан в targetPort Pod (похоже на стандартный expose в docker)
+Теперь до сервиса можно дойти по <Node-IP>:<NodePort> Также можно указать самим NodePort (но все равно из диапазона)
+
+<details open>
+<summary>html</summary>
+```html
+➜  Deron-D_microservices git:(kubernetes-2) ✗ curl http://localhost:9292
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta content='IE=Edge,chrome=1' http-equiv='X-UA-Compatible'>
+<meta content='width=device-width, initial-scale=1.0' name='viewport'>
+<title>Microservices Reddit :: All posts</title>
+<link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css' integrity='sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7' rel='stylesheet' type='text/css'>
+<link crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css' integrity='sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r' rel='stylesheet' type='text/css'>
+<script crossorigin='anonymous' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js' integrity='sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS'></script>
+</head>
+<body>
+<div class='navbar navbar-default navbar-static-top'>
+<div class='container'>
+<button class='navbar-toggle' data-target='.navbar-responsive-collapse' data-toggle='collapse' type='button'>
+<span class='icon-bar'></span>
+<span class='icon-bar'></span>
+<span class='icon-bar'></span>
+</button>
+<a class='navbar-brand' href='/'>Microservices Reddit in  ui-6fdfcbf9c-cn78r container</a>
+<div class='navbar-collapse collapse navbar-responsive-collapse'></div>
+</div>
+</div>
+<div class='container'>
+<div class='row'>
+<div class='col-lg-9'>
+
+</div>
+<div class='col-lg-3'>
+<div class='well sidebar-nav'>
+<h3>Menu</h3>
+<ul class='nav nav-list'>
+<li>
+<a href='/'>All posts</a>
+</li>
+<li>
+<a href='/new'>New post</a>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>
+```
+</details>
+
+### Minikube
+
+Minikube может перенаправлять на web-страницы с сервисами, которые были помечены типом NodePort Посмотрим на список сервисов:
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ minikube service list
+|-------------|------------|--------------|---------------------------|
+|  NAMESPACE  |    NAME    | TARGET PORT  |            URL            |
+|-------------|------------|--------------|---------------------------|
+| default     | comment    | No node port |
+| default     | comment-db | No node port |
+| default     | kubernetes | No node port |
+| default     | mongodb    | No node port |
+| default     | post       | No node port |
+| default     | post-db    | No node port |
+| default     | ui         |         9292 | http://192.168.49.2:32092 |
+| kube-system | kube-dns   | No node port |
+|-------------|------------|--------------|---------------------------|
+~~~
+
+Minikube также имеет в комплекте несколько стандартных аддонов (расширений) для Kubernetes (kube-dns, dashboard, monitoring...). Каждое расширение - это такие же PODы и сервисы, какие создавалаись нами, только они еще общаются с API самого Kubernetes
+Получить список расширений:
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗  minikube addons list
+|-----------------------------|----------|--------------|--------------------------------|
+|         ADDON NAME          | PROFILE  |    STATUS    |           MAINTAINER           |
+|-----------------------------|----------|--------------|--------------------------------|
+| ambassador                  | minikube | disabled     | third-party (ambassador)       |
+| auto-pause                  | minikube | disabled     | google                         |
+| csi-hostpath-driver         | minikube | disabled     | kubernetes                     |
+| dashboard                   | minikube | disabled     | kubernetes                     |
+| default-storageclass        | minikube | enabled ✅   | kubernetes                     |
+| efk                         | minikube | disabled     | third-party (elastic)          |
+| freshpod                    | minikube | disabled     | google                         |
+| gcp-auth                    | minikube | disabled     | google                         |
+| gvisor                      | minikube | disabled     | google                         |
+| helm-tiller                 | minikube | disabled     | third-party (helm)             |
+| ingress                     | minikube | disabled     | unknown (third-party)          |
+| ingress-dns                 | minikube | disabled     | google                         |
+| istio                       | minikube | disabled     | third-party (istio)            |
+| istio-provisioner           | minikube | disabled     | third-party (istio)            |
+| kong                        | minikube | disabled     | third-party (Kong HQ)          |
+| kubevirt                    | minikube | disabled     | third-party (kubevirt)         |
+| logviewer                   | minikube | disabled     | unknown (third-party)          |
+| metallb                     | minikube | disabled     | third-party (metallb)          |
+| metrics-server              | minikube | disabled     | kubernetes                     |
+| nvidia-driver-installer     | minikube | disabled     | google                         |
+| nvidia-gpu-device-plugin    | minikube | disabled     | third-party (nvidia)           |
+| olm                         | minikube | disabled     | third-party (operator          |
+|                             |          |              | framework)                     |
+| pod-security-policy         | minikube | disabled     | unknown (third-party)          |
+| portainer                   | minikube | disabled     | portainer.io                   |
+| registry                    | minikube | disabled     | google                         |
+| registry-aliases            | minikube | disabled     | unknown (third-party)          |
+| registry-creds              | minikube | disabled     | third-party (upmc enterprises) |
+| storage-provisioner         | minikube | enabled ✅   | google                         |
+| storage-provisioner-gluster | minikube | disabled     | unknown (third-party)          |
+| volumesnapshots             | minikube | disabled     | kubernetes                     |
+|-----------------------------|----------|--------------|--------------------------------|
+~~~
+
+### Dashboard
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ minikube addons enable dashboard
+    ▪ Используется образ kubernetesui/dashboard:v2.3.1
+    ▪ Используется образ kubernetesui/metrics-scraper:v1.0.7
+💡  Some dashboard features require the metrics-server addon. To enable all features please run:
+
+	minikube addons enable metrics-server
+
+
+🌟  The 'dashboard' addon is enabled
+➜  Deron-D_microservices git:(kubernetes-2) ✗ minikube addons enable metrics-server
+    ▪ Используется образ k8s.gcr.io/metrics-server/metrics-server:v0.4.2
+🌟  The 'metrics-server' addon is enabled
+
+minikube service kubernetes-dashboard -n kube-system
+
+~~~
+
+В Dashboard можно:
+
+- Отслеживать состояние кластера и рабочих нагрузок в нем;
+- Создавать новые объекты (загружать YAML-файлы);
+- Удалять и изменять объекты (кол-во реплик, YAML-файлы);
+- Отслеживать логи в POD-ах;
+- При включении Heapster-аддона смотреть нагрузку на POD-ах;
+- и т. д.
+
+Найдем же объекты нашего dashboard
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl get all -n kubernetes-dashboard
+NAME                                             READY   STATUS    RESTARTS   AGE
+pod/dashboard-metrics-scraper-657b679789-hwdm6   1/1     Running   0          12m
+pod/kubernetes-dashboard-7b79b6577d-4fskv        1/1     Running   0          12m
+
+NAME                                TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+service/dashboard-metrics-scraper   ClusterIP   10.103.18.88    <none>        8000/TCP   12m
+service/kubernetes-dashboard        ClusterIP   10.99.197.199   <none>        80/TCP     12m
+
+NAME                                        READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/dashboard-metrics-scraper   1/1     1            1           12m
+deployment.apps/kubernetes-dashboard        1/1     1            1           12m
+
+NAME                                                   DESIRED   CURRENT   READY   AGE
+replicaset.apps/dashboard-metrics-scraper-657b679789   1         1         1       12m
+replicaset.apps/kubernetes-dashboard-7b79b6577d        1         1         1       12m
+~~~
+
+### Namespaces
+
+При старте Kubernetes кластер имеет 3 namespace:
+- **default** - для объектов для которых не определен другой Namespace (в нем мы работали все это время)
+- **kube-system** - для объектов созданных Kubernetes’ом и для управления им
+- **kube-public** - для объектов к которым нужен доступ из любой точки кластера
+
+Используем же namespace в наших целях. Отделим среду для разработки приложения от всего остального кластера. Для этого создадим свой Namespace dev
+**dev-namespace.yml**
+
+~~~yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+~~~
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl apply -f kubernetes/reddit/dev-namespace.yml
+namespace/dev created
+~~~
+
+Запустим приложение в dev неймспейсе:
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl apply -n dev -f kubernetes/reddit
+deployment.apps/comment unchanged
+service/comment-db unchanged
+service/comment unchanged
+namespace/dev unchanged
+deployment.apps/mongo unchanged
+service/mongodb unchanged
+deployment.apps/post unchanged
+service/post-db unchanged
+service/post unchanged
+deployment.apps/ui unchanged
+service/ui unchanged
+~~~
+
+Если возник конфликт портов у ui-service, то убираем из описания значение NodePort
+
+~~~yml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  labels:
+    app: reddit
+    component: ui
+spec:
+  type: NodePort # Главное отличие - тип сервиса NodePort
+  ports:
+  #- nodePort: 32092
+  - port: 9292
+    protocol: TCP
+    targetPort: 9292
+  selector:
+      app: reddit
+      component: ui
+~~~
+
+Смотрим результат
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl get service ui -n dev
+NAME   TYPE       CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE
+ui     NodePort   10.107.239.224   <none>        9292:30922/TCP   3m57s
+~~~
+
+Давайте добавим информацию об окружении внутрь контейнера UI `ui-deployment.yml`
+
+~~~yaml
+...
+spec:
+  containers:
+  - image: deron73/ui:1.0
+    name: ui
+    env:
+    - name: ENV
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.namespace
+~~~
+
+Смотрим результат:
+
+~~~bash
+kubectl apply -n dev -f kubernetes/reddit
+
+➜  Deron-D_microservices git:(kubernetes-2) ✗ curl http://192.168.49.2:32092 | grep dev
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  1683  100  1683    0     0  76500      0 --:--:-- --:--:-- --:--:-- 80142
+<meta content='width=device-width, initial-scale=1.0' name='viewport'>
+<a class='navbar-brand' href='/'>Microservices Reddit in dev ui-559c4b7f59-2tz8n container</a>
+~~~
+
+## Yandex Cloud Managed Service for kubernetes
+
+В своей cloud console [https://console.cloud.yandex.ru/](https://console.cloud.yandex.ru/) cоздаем кластер Kubernetes и группу хостов.
+
+Подключимся к k8s для запуска нашего приложения
+
+~~~bash
+yc managed-kubernetes cluster get-credentials test-cluster --external
+
+Context 'yc-test-cluster' was added as default to kubeconfig '/home/dpp/.kube/config'.
+Check connection to cluster using 'kubectl cluster-info --kubeconfig /home/dpp/.kube/config'.
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl cluster-info --kubeconfig /home/dpp/.kube/config
+Kubernetes control plane is running at https://51.250.76.18
+CoreDNS is running at https://51.250.76.18/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+Metrics-server is running at https://51.250.76.18/api/v1/namespaces/kube-system/services/https:metrics-server:/proxy
+
+To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+~~~
+
+Также текущий контекст будет выставлен для подключения к этому кластеру. Убедиться можно, введя
+
+~~~bash
+Deron-D_microservices git:(kubernetes-2) ✗ kubectl config current-context
+yc-test-cluster
+~~~
+
+Запустим наше приложение в K8s
+~~~
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl apply -f ./kubernetes/reddit/dev-namespace.yml
+namespace/dev created
+~~~
+
+Задеплоим все компоненты приложения в namespace dev:
+
+~~~bash
+kubectl apply -f ./kubernetes/reddit/ -n dev
+~~~
+
+Найдем внешний IP-адрес любой ноды из кластера, либо в веб- консоли, либо External IP в выводе:
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl get nodes -o wide
+NAME                        STATUS   ROLES    AGE     VERSION    INTERNAL-IP   EXTERNAL-IP    OS-IMAGE             KERNEL-VERSION      CONTAINER-RUNTIME
+cl10km544djqdhbh7sf2-owum   Ready    <none>   7m47s   v1.19.15   10.128.0.13   51.250.4.178   Ubuntu 20.04.4 LTS   5.4.0-100-generic   docker://20.10.12
+cl10km544djqdhbh7sf2-oxof   Ready    <none>   7m46s   v1.19.15   10.128.0.24   51.250.2.63    Ubuntu 20.04.4 LTS   5.4.0-100-generic   docker://20.10.12
+~~~
+
+Найдем порт публикации сервиса ui:
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) ✗ kubectl describe service ui -n dev | grep NodePort
+Type:                     NodePort
+NodePort:                 <unset>  32092/TCP
+~~~
+
+Идем по адресу `http://<node-ip>:<NodePort>`
+
+![kubernetes/k8s-1.png](kubernetes/k8s-1.png)
+
+![kubernetes/k8s-2.png](kubernetes/k8s-2.png)
+
+### Удаляем ресурсы
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) yc k8s cluster list
++----------------------+--------------+---------------------+---------+---------+----------------------+--------------------+
+|          ID          |     NAME     |     CREATED AT      | HEALTH  | STATUS  |  EXTERNAL ENDPOINT   | INTERNAL ENDPOINT  |
++----------------------+--------------+---------------------+---------+---------+----------------------+--------------------+
+| cat86tvihaengll4a89q | test-cluster | 2022-04-17 16:36:03 | HEALTHY | RUNNING | https://51.250.76.18 | https://10.128.0.9 |
++----------------------+--------------+---------------------+---------+---------+----------------------+--------------------+
+
+➜  Deron-D_microservices git:(kubernetes-2) yc k8s cluster delete cat86tvihaengll4a89q
+done (53s)
+~~~
+
+### Задание со ⭐
+
+1. Разверните Kubernetes-кластер в Yandex cloud с помощью Terraform
+модуля
+2. Создайте YAML-манифесты для описания созданных сущностей для включения dashboard
+
+### Выполнено:
+
+1. Манифесты `terraform` для развертывания Kubernetes-кластера на Yandex Сloud находятся в `kubernetes\terraform-k8s`
+
+~~~bash
+➜  terraform-k8s git:(kubernetes-2) ✗ terraform init
+➜  terraform-k8s git:(kubernetes-2) ✗ terraform apply --auto-approve
+➜  terraform-k8s git:(kubernetes-2) ✗ yc k8s cluster list
++----------------------+---------+---------------------+---------+---------+----------------------+--------------------+
+|          ID          |  NAME   |     CREATED AT      | HEALTH  | STATUS  |  EXTERNAL ENDPOINT   | INTERNAL ENDPOINT  |
++----------------------+---------+---------------------+---------+---------+----------------------+--------------------+
+| cat836hjnjutb4k23nu3 | k8s-dev | 2022-04-17 18:31:41 | HEALTHY | RUNNING | https://51.250.82.52 | https://10.128.0.8 |
++----------------------+---------+---------------------+---------+---------+----------------------+--------------------+
+➜  terraform-k8s git:(kubernetes-2) ✗ yc managed-kubernetes cluster get-credentials k8s-dev --external
+
+Context 'yc-k8s-dev' was added as default to kubeconfig '/home/dpp/.kube/config'.
+Check connection to cluster using 'kubectl cluster-info --kubeconfig /home/dpp/.kube/config'.
+
+Note, that authentication depends on 'yc' and its config profile 'default'.
+To access clusters using the Kubernetes API, please use Kubernetes Service Account.
+➜  terraform-k8s git:(kubernetes-2) ✗ kubectl config current-context
+yc-k8s-dev
+~~~
+
+2. YAML-манифесты для описания созданных сущностей для включения dashboard находятся в `kubernetes\dashboard`
+
+Возьмем рекомендованный манифест:
+
+~~~bash
+curl https://raw.githubusercontent.com/kubernetes/dashboard/v2.5.0/aio/deploy/recommended.yaml -o dashboard.yml
+~~~
+
+Отредактируем 'dashboard.yml', добавим параметр 'NodePort':
+
+~~~yaml
+...
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+spec:
+  ports:
+    - port: 443
+      targetPort: 8443
+  selector:
+    k8s-app: kubernetes-dashboard
+  type: NodePort
+...
+~~~
+
+Деплоим и проверяем:
+
+~~~bash
+➜  dashboard git:(kubernetes-2) ✗ kubectl apply -f dashboard.yml
+namespace/kubernetes-dashboard created
+serviceaccount/kubernetes-dashboard created
+service/kubernetes-dashboard created
+secret/kubernetes-dashboard-certs created
+secret/kubernetes-dashboard-csrf created
+secret/kubernetes-dashboard-key-holder created
+configmap/kubernetes-dashboard-settings created
+role.rbac.authorization.k8s.io/kubernetes-dashboard created
+clusterrole.rbac.authorization.k8s.io/kubernetes-dashboard created
+rolebinding.rbac.authorization.k8s.io/kubernetes-dashboard created
+clusterrolebinding.rbac.authorization.k8s.io/kubernetes-dashboard created
+deployment.apps/kubernetes-dashboard created
+service/dashboard-metrics-scraper created
+deployment.apps/dashboard-metrics-scraper created
+
+➜  dashboard git:(kubernetes-2) ✗ kubectl get deployments -n kubernetes-dashboard
+NAME                        READY   UP-TO-DATE   AVAILABLE   AGE
+dashboard-metrics-scraper   1/1     1            1           32s
+kubernetes-dashboard        1/1     1            1           33s
+➜  dashboard git:(kubernetes-2) ✗ kubectl get pods -n kubernetes-dashboard
+NAME                                         READY   STATUS    RESTARTS   AGE
+dashboard-metrics-scraper-5b8896d7fc-vnc7g   1/1     Running   0          43s
+kubernetes-dashboard-cb988587b-tfn8d         1/1     Running   0          44s
+➜  dashboard git:(kubernetes-2) ✗ kubectl get services -n kubernetes-dashboard
+NAME                        TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)         AGE
+dashboard-metrics-scraper   ClusterIP   10.96.243.115   <none>        8000/TCP        65s
+kubernetes-dashboard        NodePort    10.96.230.197   <none>        443:30056/TCP   72s
+~~~
+
+Creating a Service Account & ClusterRoleBinding
+~~~bash
+➜  dashboard git:(kubernetes-2) ✗ kubectl apply -f dashboard-adminuser.yml
+serviceaccount/kube-admin created
+clusterrolebinding.rbac.authorization.k8s.io/admin-user created
+~~~
+
+Getting a Bearer Token
+~~~bash
+kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | grep 'kube-admin' | awk '{print $1}')
+Name:         kube-admin-token-f7ltw
+Namespace:    kube-system
+Labels:       <none>
+Annotations:  kubernetes.io/service-account.name: kube-admin
+              kubernetes.io/service-account.uid: 83bac53e-1837-4142-b8e2-b5ff4b717ec5
+
+Type:  kubernetes.io/service-account-token
+
+Data
+====
+ca.crt:     1066 bytes
+namespace:  11 bytes
+token:      ...
+~~~
+
+~~~bash
+kubectl get service -n kubernetes-dashboard | grep dashboard
+➜  dashboard git:(kubernetes-2) ✗ kubectl get service -n kubernetes-dashboard | grep dashboard
+dashboard-metrics-scraper   ClusterIP   10.96.243.115   <none>        8000/TCP        32m
+kubernetes-dashboard        NodePort    10.96.230.197   <none>        443:30056/TCP   32m
+~~~
+
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-2) kubectl proxy
+Starting to serve on 127.0.0.1:8001
+~~~
+
+Откроем страницу: [http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/](http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/)
+
+![kubernetes/k8s-3.png](kubernetes/k8s-3.png)
+![kubernetes/k8s-4.png](kubernetes/k8s-4.png)
+
+## **Полезное:**
+- [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
+- [minikube start](https://kubernetes.io/docs/tasks/tools/install-minikube/)
+- [yandex_kubernetes_cluster](https://registry.terraform.io/providers/yandex-cloud/yandex/latest/docs/data-sources/datasource_kubernetes_cluster)
+- [Deploy and Access the Kubernetes Dashboard](https://kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard/)
+- [How to Install and Configure the Kubernetes Dashboard](https://www.liquidweb.com/kb/how-to-install-and-configure-the-kubernetes-dashboard/)
+
+</details>

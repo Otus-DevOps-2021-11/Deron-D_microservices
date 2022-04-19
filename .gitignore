@@ -11,3 +11,4 @@ vault.key
 *.env
 bugged-code/
 inventory.ini
+*.rpm
