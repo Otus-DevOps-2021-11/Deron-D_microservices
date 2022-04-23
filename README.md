@@ -5298,6 +5298,204 @@ ingress-nginx-controller-7d7999cdf6-r5wx6   1/1     Running     0          14m
 Проверить что создались нужные сервисы можем проверить так же во вкладке Сеть` в настройках кластера.
 ![kubernetes/k8s-6.png](kubernetes/k8s-6.png)
 
+### Создадим Ingress для сервиса UI:
+
+~~~yaml
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ui
+spec:
+  backend:
+    serviceName: ui
+    servicePort: 80
+~~~
+
+Это **Single Service Ingress** - значит, что весь ingress контроллер будет просто балансировать нагрузку на Node-ы для одного сервиса (очень похоже на Service LoadBalancer)
+
+Применим конфиг
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f kubernetes/reddit/ui-ingress.yml -n dev
+
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get ingress
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+No resources found in default namespace.
+
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get ingress -n dev
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+NAME   CLASS    HOSTS   ADDRESS        PORTS   AGE
+ui     <none>   *       51.250.78.76   80      2m10s
+~~~
+
+Уберем один балансировщик (LoadBalancer). Обновим сервис для UI `ui-service.yml`:
+~~~yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  labels:
+    app: reddit
+    component: ui
+spec:
+  type: NodePort
+  ports:
+  - port: 9292
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: ui
+~~~
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f kubernetes/reddit/ui-service.yml -n dev
+service/ui configured
+~~~
+
+Заставим работать Ingress Controller как классический веб. `ui-ingress.yml`
+
+~~~yaml
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ui
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /*
+        backend:
+          serviceName: ui
+          servicePort: 9292
+~~~
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f kubernetes/reddit/ui-ingress.yml -n dev
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+ingress.extensions/ui configured
+~~~
+
+Защитим наш сервис с помощью TLS:
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout tls.key -out tls.crt -subj "/CN=51.250.78.76"
+Generating a RSA private key
+............................................................+++++
+...........................................................................+++++
+writing new private key to 'tls.key'
+-----
+~~~
+
+И загрузит сертификат в кластер kubernetes
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗  kubectl create secret tls ui-ingress --key tls.key --cert tls.crt -n dev
+secret/ui-ingress created
+~~~
+
+Проверить можно командой
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗  kubectl describe secret ui-ingress -n dev
+Name:         ui-ingress
+Namespace:    dev
+Labels:       <none>
+Annotations:  <none>
+
+Type:  kubernetes.io/tls
+
+Data
+====
+tls.crt:  1123 bytes
+tls.key:  1708 bytes
+~~~
+
+Теперь настроим Ingress на прием только HTTPS траффика `ui-ingress.yml`
+~~~bash
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ui
+  annotations:
+    kubernetes.io/ingress.allow-http: "false" # Отключаем проброс HTTP
+spec:
+  tls:
+  - secretName: ui-ingress # Подключаем наш сертификат
+  backend:
+    serviceName: ui
+    servicePort: 9292
+~~~
+
+Применим:
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗  kubectl apply -f kubernetes/reddit/ui-ingress.yml -n dev
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+ingress.extensions/ui configured
+~~~
+
+Иногда протокол HTTP может не удалиться у существующего Ingress правила, тогда нужно его вручную удалить и пересоздать
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl delete ingress ui -n dev
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+ingress.extensions "ui" deleted
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f kubernetes/reddit/ui-ingress.yml -n dev
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+ingress.extensions/ui created
+~~~
+
+Задание со ⭐
+
+Опишите создаваемый объект Secret в виде Kubernetes-манифеста.
+---
+
+Закодируем ключ и сертификат в base64:
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ base64 tls.crt
+LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUREekNDQWZlZ0F3SUJBZ0lVWjdlTDZBT1Fs
+...
+➜  Deron-D_microservices git:(kubernetes-3) ✗ base64 tls.key
+LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2d0lCQURBTkJna3Foa2lHOXcwQkFRRUZB
+...
+~~~
+
+Создадим `kubernetes/reddit/secret.yml`
+~~~yml
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secret-tls
+type: kubernetes.io/tls
+data:
+  # the data is abbreviated in this example
+  tls.crt: |
+    LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUREekNDQWZlZ0F3SUJBZ0lVWjdlTDZBT1Fs
+...
+  tls.key: |
+    LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2d0lCQURBTkJna3Foa2lHOXcwQkFRRUZB
+...
+~~~
+
+Уточним название секрета в спеке `ui-ingress.yml`
+~~~yml
+...
+spec:
+  tls:
+  #- secretName: ui-ingress # Подключаем наш сертификат
+  - secretName: secret-tls # Подключаем наш секрет
+...
+~~~
+
+Применим измененную конфигурацию:
+~~~bash
+kubectl apply -f kubernetes/reddit -n dev
+~~~
+
+
+
+
 ## **Полезное:**
+[https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets](https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets)
 
 </details>
