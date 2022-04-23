@@ -5255,6 +5255,49 @@ ui     LoadBalancer   10.96.218.243   51.250.83.49   80:32092/TCP   3h18m
 
 ![kubernetes/k8s-5.png](kubernetes/k8s-5.png)
 
+Балансировка с помощью Service типа LoadBalancing имеет ряд недостатков:
+- Нельзя управлять с помощью http URI (L7-балансировщика)
+- Используются только облачные балансировщики (AWS, GCP)
+- Нет гибких правил работы с трафиком
+
+### Ingress
+
+Для более удобного управления входящим снаружи трафиком и решения недостатков LoadBalancer можно использовать другой объект Kubernetes - **Ingress**
+
+**Ingress** - это набор правил внутри кластера Kuberntes, предназначенных для того, чтобы входящие подключения могли достичь сервисов (Services)
+
+Сами по себе Ingress'ы это просто правила. Для их применения нужен **Ingress Controller**.
+
+Для работы Ingress-ов необходим **Ingress Controller**. В отличие от остальных контроллеров k8s - он не стартует вместе с кластером.
+**Ingress Controller** - это скорее плагин (а значит и отдельный POD), который состоит из 2-х функциональных частей:
+Приложение, которое отслеживает через k8s API новые объекты Ingress и обновляет конфигурацию балансировщика
+Балансировщик (Nginx, haproxym traefik, ...), который и занимается управлением сетевым трафиком
+
+Основные задачи, решаемые с помощью Ingress'ов:
+- Организация единой точки входа в приложения снаружи
+- Обеспечение балансировки трафика
+- Терминация SSL
+- Виртуальный хостинг на основе имен и т. д.
+
+Поскольку у нас web-приложение, нам вполне было бы логично использовать L7-балансировщик вместо Service LoadBalancer.
+
+Установим Ingress Controller:
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v0.34.1/deploy/static/provider/cloud/deploy.yaml
+~~~
+
+Ingress установился в namespace ingress-nginx
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get pods -n ingress-nginx
+NAME                                        READY   STATUS      RESTARTS   AGE
+ingress-nginx-admission-create-r2hwz        0/1     Completed   0          14m
+ingress-nginx-admission-patch-j7c2q         0/1     Completed   1          14m
+ingress-nginx-controller-7d7999cdf6-r5wx6   1/1     Running     0          14m
+~~~
+
+Проверить что создались нужные сервисы можем проверить так же во вкладке Сеть` в настройках кластера.
+![kubernetes/k8s-6.png](kubernetes/k8s-6.png)
+
 ## **Полезное:**
 
 </details>
