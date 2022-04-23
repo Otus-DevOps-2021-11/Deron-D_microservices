@@ -7,12 +7,12 @@ metadata:
     app: reddit
     component: ui
 spec:
-  type: NodePort # Главное отличие - тип сервиса NodePort
+  type: LoadBalancer
   ports:
-  - nodePort: 32092
-    port: 9292
+  - port: 80 # Порт, который будет открыт на балансировщике
+    nodePort: 32092 # Также на ноде будет открыт порт, но нам он не нужен и его можно даже убрать
     protocol: TCP
-    targetPort: 9292
+    targetPort: 9292 # Порт POD-а
   selector:
-      app: reddit
-      component: ui
+    app: reddit
+    component: ui

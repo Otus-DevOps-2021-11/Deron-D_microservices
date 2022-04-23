@@ -5142,6 +5142,117 @@ Starting to serve on 127.0.0.1:8001
 
 ## **Выполнено:**
 
+Поднимем кластер k8s
+~~~bash
+terraform-k8s git:(kubernetes-3) terraform apply --auto-approve
+yc managed-kubernetes cluster get-credentials k8s-dev --external --force
+~~~
+
+Развернем приклад
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) kubectl apply -f ./kubernetes/reddit/dev-namespace.yml
+namespace/dev created
+➜  Deron-D_microservices git:(kubernetes-3) kubectl apply -f ./kubernetes/reddit/ -n dev
+~~~
+
+### Service
+
+**ClusterIP** - это виртуальный (в реальности нет интерфейса, pod'a или машины с таким адресом) IP-адрес из диапазона адресов для работы внутри, скрывающий за собой IP-адреса реальных POD-ов. Сервису любого типа (кроме ExternalName) назначается этот IP-адрес.
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get services -n dev
+NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+comment      ClusterIP   10.96.155.145   <none>        9292/TCP         10m
+comment-db   ClusterIP   10.96.232.160   <none>        27017/TCP        10m
+mongodb      ClusterIP   10.96.137.118   <none>        27017/TCP        10m
+post         ClusterIP   10.96.242.98    <none>        5000/TCP         10m
+post-db      ClusterIP   10.96.155.164   <none>        27017/TCP        10m
+ui           NodePort    10.96.218.243   <none>        9292:32092/TCP   10m
+~~~
+
+### Kube-dns
+
+Можем убедиться, что при отключенном kube-dns сервисе связность между компонентами reddit-app пропадает и он перестанет работать.
+1) Проскейлим в 0 сервис, который следит, чтобы dns-kube подов всегда хватало
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get pods -A | grep dns
+kube-system   coredns-7bc8cf4789-ltxvk                              1/1     Running   0          146m
+kube-system   coredns-7bc8cf4789-qbnnd                              1/1     Running   0          142m
+kube-system   kube-dns-autoscaler-598db8ff9c-slprb                  1/1     Running   0          5s
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl scale deployment --replicas 0 -n kube-system kube-dns-autoscaler
+deployment.apps/kube-dns-autoscaler scaled
+~~~
+
+2) Проскейлим в 0 сам kube-dns
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl scale deployment --replicas 0 -n kube-system kube-dns
+Error from server (NotFound): deployments.apps "kube-dns" not found
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get pods -A | grep dns
+kube-system   coredns-7bc8cf4789-ltxvk                              1/1     Running   0          145m
+kube-system   coredns-7bc8cf4789-qbnnd                              1/1     Running   0          141m
+~~~
+
+3) Попробуем достучаться по имени до любого сервиса.
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl exec -n dev post-98967c6d9-df8sx -- ping comment
+PING comment (10.96.155.145): 56 data bytes
+^C
+~~~
+
+4) Вернем kube-dns-autoscale в исходную
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl scale deployment --replicas 1 -n kube-system kube-dns-autoscaler
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get pods -A | grep dns
+kube-system   coredns-7bc8cf4789-ltxvk                              1/1     Running   0          147m
+kube-system   coredns-7bc8cf4789-qbnnd                              1/1     Running   0          143m
+kube-system   kube-dns-autoscaler-598db8ff9c-x7m9k                  1/1     Running   0          2s
+~~~
+
+5) Проверим, что приложение заработало (в браузере)
+
+### LoadBalancer
+
+Настроим соответствующим образом Service UI `ui-service.yml`:
+
+~~~yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  labels:
+app: reddit
+    component: ui
+spec:
+  type: LoadBalancer
+  ports:
+    #Порт, который будет открыт на балансировщике
+  - port: 80
+    # Также на ноде будет открыт порт, но нам он не нужен и его можно даже убрать#
+    nodePort: 32092
+    protocol: TCP
+    # Порт POD-а
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: ui
+~~~
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f ./kubernetes/reddit/ui-service.yml -n dev
+service/ui configured
+~~~
+
+Посмотрим что там
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗  kubectl get service -n dev --selector component=ui
+NAME   TYPE           CLUSTER-IP      EXTERNAL-IP    PORT(S)        AGE
+ui     LoadBalancer   10.96.218.243   51.250.83.49   80:32092/TCP   3h18m
+~~~
+
+Приложение должно быть доступно по [http://51.250.83.49/](http://51.250.83.49/)
+
 ## **Полезное:**
 
 </details>
