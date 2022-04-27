@@ -5706,6 +5706,20 @@ kubectl apply -f kubernetes/reddit/mongo-claim.yml -n dev
 kubectl apply -f kubernetes/reddit/mongo-deployment.yml -n dev
 ~~~
 
+Дождемся пересоздания POD'а (занимает до 10 минут).
+Зайдем в приложение и добавим пост.
+Удалим deployment.
+
+~~~bash
+kubectl delete deploy mongo -n dev
+~~~
+
+Снова создадим деплой mongo
+~~~bash
+kubectl apply -f mongo-deployment.yml -n dev
+~~~
+
+Наш пост все ее на месте
 
 ## **Полезное:**
 - [https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets](https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets)
