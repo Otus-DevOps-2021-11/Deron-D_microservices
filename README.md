@@ -5559,7 +5559,7 @@ spec:
       app: reddit
       component: mongo
   policyTypes:
-  - Ingress
+    - Ingress
   ingress:
   - from:
     - podSelector:
@@ -5574,6 +5574,137 @@ kubectl apply -f mongo-network-policy.yml -n dev
 ~~~
 
 Заходим в приложение:
+
+![kubernetes/k8s-7.png](kubernetes/k8s-7.png)
+
+### Задание
+
+Обновим `mongo-network-policy.yml` так, чтобы post-сервис дошел до базы данных.
+
+~~~yaml
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-db-traffic
+  namespace: dev
+  labels:
+    app: reddit
+spec:
+  podSelector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: reddit
+              component: comment
+        - podSelector:
+            matchLabels:
+              app: reddit
+              component: post
+~~~
+
+## Хранилище для базы
+
+Рассмотрим вопросы хранения данных. Основной Stateful сервис в нашем приложении - это базы данных MongoDB. В текущий момент она запускается в виде Deployment и хранит данные в стандартных Docker Volume-ах. Это имеет несколько проблем:
+- При удалении POD-а удаляется и Volume
+- Потерям Nod'ы с mongo грозит потерей данных
+- Запуск базы на другой ноде запускает новый экземпляр данных
+
+### Volume
+Сейчас используется тип Volume emptyDir. При создании пода с таким типом просто создается пустой docker volume. При остановке POD'а содержимое emptyDir удалится навсегда. Хотя в общем случае падение POD'а не вызывает удаления Volume'а.
+
+Вместо того, чтобы хранить данные локально на ноде, имеет смысл подключить удаленное хранилище.
+
+### PersistentVolume
+
+Используемый механизм Volume-ов можно сделать удобнее. Мы можем использовать не целый выделенный диск для каждого пода, а целый ресурс хранилища, общий для всего кластера Тогда при запуске Stateful- задач в кластере, мы сможем запросить хранилище в виде такого же ресурса, как CPU или оперативная память.
+Для этого будем использовать механизм PersistentVolume.
+
+Для начала создадим диск PersitentVolume в ya.cloud:
+
+~~~bash
+yc compute disk create \
+    --name k8s \
+    --size 4 \
+    --description "disk for k8s"
+~~~
+
+Посмотреть список дисков можно следующей командой:
+
+~~~bash
+yc compute disk list
++----------------------+------+-------------+---------------+--------+----------------------+--------------+
+|          ID          | NAME |    SIZE     |     ZONE      | STATUS |     INSTANCE IDS     | DESCRIPTION  |
++----------------------+------+-------------+---------------+--------+----------------------+--------------+
+| fhmuitl1pqiqafnajdmf | k8s  |  4294967296 | ru-central1-a | READY  |                      | disk for k8s |
++----------------------+------+-------------+---------------+--------+----------------------+--------------+
+~~~
+
+Создадим PV в ya.cloud с помощью `mongo-volume.yml`
+
+~~~yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-pv
+spec:
+  capacity:
+    storage: 4Gi
+  accessModes:
+    - ReadWriteOnce
+  csi:
+    driver: disk-csi-driver.mks.ycloud.io
+    fsType: ext4
+    volumeHandle: fhmuitl1pqiqafnajdmf
+~~~
+
+Создадим PVC с помощью `mongo-claim.yml`
+
+~~~yaml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+spec:
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 4Gi
+  volumeName: mongo-pv
+~~~
+
+Подключим созданный PVC в `mongo-deployment.yml`
+
+~~~yaml
+...
+spec:
+  containers:
+  - image: mongo:3.2
+    name: mongo
+    volumeMounts:
+    - name: mongo-persistent-storage
+      mountPath: /data/db
+  volumes:
+  - name: mongo-persistent-storage
+    persistentVolumeClaim:
+      claimName:  mongo-pvc
+~~~
+
+Передеплоим:
+~~~bash
+kubectl apply -f kubernetes/reddit/mongo-volume.yml -n dev
+kubectl apply -f kubernetes/reddit/mongo-claim.yml -n dev
+kubectl apply -f kubernetes/reddit/mongo-deployment.yml -n dev
+~~~
 
 
 ## **Полезное:**

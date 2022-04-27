@@ -12,10 +12,14 @@ spec:
       app: reddit
       component: mongo
   policyTypes:
-  - Ingress
+    - Ingress
   ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: reddit
-          component: comment
+    - from:
+        - podSelector:
+            matchLabels:
+              app: reddit
+              component: comment
+        - podSelector:
+            matchLabels:
+              app: reddit
+              component: post
