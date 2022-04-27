@@ -5492,10 +5492,92 @@ spec:
 kubectl apply -f kubernetes/reddit -n dev
 ~~~
 
+### Network Policy
 
+Мы будем использовать NetworkPolicy - инструмент для декларативного описания потоков трафика.
+Давайте ее протестируем.
+Наша задача - ограничить трафик, поступающий на mongodb отовсюду, кроме сервисов post и comment.
+
+<details>
+  <summary>Эксперимент c CLI</summary>
+
+Поднимем кластер с помощью CLI для разнообразия (обязательно с  опцией --enable-network-policy):
+
+~~~bash
+yc managed-kubernetes cluster create \
+--name k8s-dev --zone ru-central1-a \
+--network-name default \
+--enable-network-policy \
+--service-account-name k8s-sa \
+--node-service-account-name k8s-sa \
+--public-ip
+
+yc managed-kubernetes cluster get-credentials k8s-dev --external --force
+~~~
+
+Поднимем приложение:
+~~~bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v0.34.1/deploy/static/provider/cloud/deploy.yaml
+
+kubectl get pods -n ingress-nginx
+NAME                                        READY   STATUS      RESTARTS   AGE
+ingress-nginx-admission-create-zslmh        0/1     Completed   0          42s
+ingress-nginx-admission-patch-zz9jx         0/1     Completed   0          42s
+ingress-nginx-controller-7d7999cdf6-z8tgq   0/1     Running     0          52s
+
+kubectl apply -f ./kubernetes/reddit/dev-namespace.yml
+kubectl apply -f ./kubernetes/reddit/ -n dev
+
+kubectl delete ingress ui -n dev
+kubectl apply -f kubernetes/reddit/ui-ingress.yml -n dev
+
+kubectl get ingress -n dev
+~~~
+
+</details>
+
+Проверим, задействован ли в кластере контроллер сетевых политик Calico:
+~~~bash
+yc managed-kubernetes cluster get k8s-dev | grep -A 1 network_policy
+network_policy:
+  provider: CALICO
+~~~
+
+Создадим `mongo-network-policy.yml` со следующим содержимым:
+~~~yaml
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-db-traffic
+  namespace: dev
+  labels:
+    app: reddit
+spec:
+  podSelector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: reddit
+          component: comment
+~~~
+
+Применяем политику:
+~~~bash
+kubectl apply -f mongo-network-policy.yml -n dev
+~~~
+
+Заходим в приложение:
 
 
 ## **Полезное:**
-[https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets](https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets)
+- [https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets](https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets)
+- [https://cloud.yandex.ru/docs/managed-kubernetes/operations/calico](https://cloud.yandex.ru/docs/managed-kubernetes/operations/calico)
 
 </details>
