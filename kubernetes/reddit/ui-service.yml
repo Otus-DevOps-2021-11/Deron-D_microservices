@@ -7,12 +7,11 @@ metadata:
     app: reddit
     component: ui
 spec:
-  type: NodePort # Главное отличие - тип сервиса NodePort
+  type: NodePort
   ports:
-  - nodePort: 32092
-    port: 9292
+  - port: 9292
     protocol: TCP
     targetPort: 9292
   selector:
-      app: reddit
-      component: ui
+    app: reddit
+    component: ui

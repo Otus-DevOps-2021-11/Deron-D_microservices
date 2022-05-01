@@ -12,3 +12,5 @@ vault.key
 bugged-code/
 inventory.ini
 *.rpm
+*.crt
+*.key

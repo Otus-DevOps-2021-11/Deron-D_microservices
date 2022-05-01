@@ -5106,3 +5106,623 @@ Starting to serve on 127.0.0.1:8001
 - [How to Install and Configure the Kubernetes Dashboard](https://www.liquidweb.com/kb/how-to-install-and-configure-the-kubernetes-dashboard/)
 
 </details>
+
+# **Лекция №30: Ingress-контроллеры и сервисы в Kubernetes**
+> _kubernetes-3_
+<details>
+  <summary>Kubernetes. Networks, Storages.</summary>
+
+## **Задание:**
+Домашнее задание
+Настройка балансировщиков нагрузки в Kubernetes и SSL­Terminating.
+
+Цель:
+В данном дз студент научится подключать и использовать удаленные хранилища, публиковать сервисы.
+В данном задании тренируются навыки: использования хранилищ, работы с Ingress контроллером.
+
+Описание/Пошаговая инструкция выполнения домашнего задания:
+Все действия описаны в методическом указании.
+
+Критерии оценки:
+0 б. - задание не выполнено
+1 б. - задание выполнено
+2 б. - выполнены все дополнительные задания
+
+---
+## **План**
+- Ingress Controller
+- Ingress
+- Secret
+- TLS
+- LoadBalancer Service
+- Network Policies
+- PersistentVolumes
+- PersistentVolumeClaims
+
+
+## **Выполнено:**
+
+Поднимем кластер k8s
+~~~bash
+terraform-k8s git:(kubernetes-3) terraform apply --auto-approve
+yc managed-kubernetes cluster get-credentials k8s-dev --external --force
+~~~
+
+Развернем приклад
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) kubectl apply -f ./kubernetes/reddit/dev-namespace.yml
+namespace/dev created
+➜  Deron-D_microservices git:(kubernetes-3) kubectl apply -f ./kubernetes/reddit/ -n dev
+~~~
+
+### Service
+
+**ClusterIP** - это виртуальный (в реальности нет интерфейса, pod'a или машины с таким адресом) IP-адрес из диапазона адресов для работы внутри, скрывающий за собой IP-адреса реальных POD-ов. Сервису любого типа (кроме ExternalName) назначается этот IP-адрес.
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get services -n dev
+NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+comment      ClusterIP   10.96.155.145   <none>        9292/TCP         10m
+comment-db   ClusterIP   10.96.232.160   <none>        27017/TCP        10m
+mongodb      ClusterIP   10.96.137.118   <none>        27017/TCP        10m
+post         ClusterIP   10.96.242.98    <none>        5000/TCP         10m
+post-db      ClusterIP   10.96.155.164   <none>        27017/TCP        10m
+ui           NodePort    10.96.218.243   <none>        9292:32092/TCP   10m
+~~~
+
+### Kube-dns
+
+Можем убедиться, что при отключенном kube-dns сервисе связность между компонентами reddit-app пропадает и он перестанет работать.
+1) Проскейлим в 0 сервис, который следит, чтобы dns-kube подов всегда хватало
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get pods -A | grep dns
+kube-system   coredns-7bc8cf4789-ltxvk                              1/1     Running   0          146m
+kube-system   coredns-7bc8cf4789-qbnnd                              1/1     Running   0          142m
+kube-system   kube-dns-autoscaler-598db8ff9c-slprb                  1/1     Running   0          5s
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl scale deployment --replicas 0 -n kube-system kube-dns-autoscaler
+deployment.apps/kube-dns-autoscaler scaled
+~~~
+
+2) Проскейлим в 0 сам kube-dns
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl scale deployment --replicas 0 -n kube-system kube-dns
+Error from server (NotFound): deployments.apps "kube-dns" not found
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get pods -A | grep dns
+kube-system   coredns-7bc8cf4789-ltxvk                              1/1     Running   0          145m
+kube-system   coredns-7bc8cf4789-qbnnd                              1/1     Running   0          141m
+~~~
+
+3) Попробуем достучаться по имени до любого сервиса.
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl exec -n dev post-98967c6d9-df8sx -- ping comment
+PING comment (10.96.155.145): 56 data bytes
+^C
+~~~
+
+4) Вернем kube-dns-autoscale в исходную
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl scale deployment --replicas 1 -n kube-system kube-dns-autoscaler
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get pods -A | grep dns
+kube-system   coredns-7bc8cf4789-ltxvk                              1/1     Running   0          147m
+kube-system   coredns-7bc8cf4789-qbnnd                              1/1     Running   0          143m
+kube-system   kube-dns-autoscaler-598db8ff9c-x7m9k                  1/1     Running   0          2s
+~~~
+
+5) Проверим, что приложение заработало (в браузере)
+
+### LoadBalancer
+
+Настроим соответствующим образом Service UI `ui-service.yml`:
+
+~~~yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  labels:
+app: reddit
+    component: ui
+spec:
+  type: LoadBalancer
+  ports:
+    #Порт, который будет открыт на балансировщике
+  - port: 80
+    # Также на ноде будет открыт порт, но нам он не нужен и его можно даже убрать#
+    nodePort: 32092
+    protocol: TCP
+    # Порт POD-а
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: ui
+~~~
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f ./kubernetes/reddit/ui-service.yml -n dev
+service/ui configured
+~~~
+
+Посмотрим что там
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗  kubectl get service -n dev --selector component=ui
+NAME   TYPE           CLUSTER-IP      EXTERNAL-IP    PORT(S)        AGE
+ui     LoadBalancer   10.96.218.243   51.250.83.49   80:32092/TCP   3h18m
+~~~
+
+Приложение должно быть доступно по [http://51.250.83.49/](http://51.250.83.49/)
+
+![kubernetes/k8s-5.png](kubernetes/k8s-5.png)
+
+Балансировка с помощью Service типа LoadBalancing имеет ряд недостатков:
+- Нельзя управлять с помощью http URI (L7-балансировщика)
+- Используются только облачные балансировщики (AWS, GCP)
+- Нет гибких правил работы с трафиком
+
+### Ingress
+
+Для более удобного управления входящим снаружи трафиком и решения недостатков LoadBalancer можно использовать другой объект Kubernetes - **Ingress**
+
+**Ingress** - это набор правил внутри кластера Kuberntes, предназначенных для того, чтобы входящие подключения могли достичь сервисов (Services)
+
+Сами по себе Ingress'ы это просто правила. Для их применения нужен **Ingress Controller**.
+
+Для работы Ingress-ов необходим **Ingress Controller**. В отличие от остальных контроллеров k8s - он не стартует вместе с кластером.
+**Ingress Controller** - это скорее плагин (а значит и отдельный POD), который состоит из 2-х функциональных частей:
+Приложение, которое отслеживает через k8s API новые объекты Ingress и обновляет конфигурацию балансировщика
+Балансировщик (Nginx, haproxym traefik, ...), который и занимается управлением сетевым трафиком
+
+Основные задачи, решаемые с помощью Ingress'ов:
+- Организация единой точки входа в приложения снаружи
+- Обеспечение балансировки трафика
+- Терминация SSL
+- Виртуальный хостинг на основе имен и т. д.
+
+Поскольку у нас web-приложение, нам вполне было бы логично использовать L7-балансировщик вместо Service LoadBalancer.
+
+Установим Ingress Controller:
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v0.34.1/deploy/static/provider/cloud/deploy.yaml
+~~~
+
+Ingress установился в namespace ingress-nginx
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get pods -n ingress-nginx
+NAME                                        READY   STATUS      RESTARTS   AGE
+ingress-nginx-admission-create-r2hwz        0/1     Completed   0          14m
+ingress-nginx-admission-patch-j7c2q         0/1     Completed   1          14m
+ingress-nginx-controller-7d7999cdf6-r5wx6   1/1     Running     0          14m
+~~~
+
+Проверить что создались нужные сервисы можем проверить так же во вкладке Сеть` в настройках кластера.
+![kubernetes/k8s-6.png](kubernetes/k8s-6.png)
+
+### Создадим Ingress для сервиса UI:
+
+~~~yaml
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ui
+spec:
+  backend:
+    serviceName: ui
+    servicePort: 80
+~~~
+
+Это **Single Service Ingress** - значит, что весь ingress контроллер будет просто балансировать нагрузку на Node-ы для одного сервиса (очень похоже на Service LoadBalancer)
+
+Применим конфиг
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f kubernetes/reddit/ui-ingress.yml -n dev
+
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get ingress
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+No resources found in default namespace.
+
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl get ingress -n dev
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+NAME   CLASS    HOSTS   ADDRESS        PORTS   AGE
+ui     <none>   *       51.250.78.76   80      2m10s
+~~~
+
+Уберем один балансировщик (LoadBalancer). Обновим сервис для UI `ui-service.yml`:
+~~~yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  labels:
+    app: reddit
+    component: ui
+spec:
+  type: NodePort
+  ports:
+  - port: 9292
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: ui
+~~~
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f kubernetes/reddit/ui-service.yml -n dev
+service/ui configured
+~~~
+
+Заставим работать Ingress Controller как классический веб. `ui-ingress.yml`
+
+~~~yaml
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ui
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /*
+        backend:
+          serviceName: ui
+          servicePort: 9292
+~~~
+
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f kubernetes/reddit/ui-ingress.yml -n dev
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+ingress.extensions/ui configured
+~~~
+
+Защитим наш сервис с помощью TLS:
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout tls.key -out tls.crt -subj "/CN=51.250.78.76"
+Generating a RSA private key
+............................................................+++++
+...........................................................................+++++
+writing new private key to 'tls.key'
+-----
+~~~
+
+И загрузит сертификат в кластер kubernetes
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗  kubectl create secret tls ui-ingress --key tls.key --cert tls.crt -n dev
+secret/ui-ingress created
+~~~
+
+Проверить можно командой
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗  kubectl describe secret ui-ingress -n dev
+Name:         ui-ingress
+Namespace:    dev
+Labels:       <none>
+Annotations:  <none>
+
+Type:  kubernetes.io/tls
+
+Data
+====
+tls.crt:  1123 bytes
+tls.key:  1708 bytes
+~~~
+
+Теперь настроим Ingress на прием только HTTPS траффика `ui-ingress.yml`
+~~~bash
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ui
+  annotations:
+    kubernetes.io/ingress.allow-http: "false" # Отключаем проброс HTTP
+spec:
+  tls:
+  - secretName: ui-ingress # Подключаем наш сертификат
+  backend:
+    serviceName: ui
+    servicePort: 9292
+~~~
+
+Применим:
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗  kubectl apply -f kubernetes/reddit/ui-ingress.yml -n dev
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+ingress.extensions/ui configured
+~~~
+
+Иногда протокол HTTP может не удалиться у существующего Ingress правила, тогда нужно его вручную удалить и пересоздать
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl delete ingress ui -n dev
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+ingress.extensions "ui" deleted
+➜  Deron-D_microservices git:(kubernetes-3) ✗ kubectl apply -f kubernetes/reddit/ui-ingress.yml -n dev
+Warning: extensions/v1beta1 Ingress is deprecated in v1.14+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+ingress.extensions/ui created
+~~~
+
+Задание со ⭐
+
+Опишите создаваемый объект Secret в виде Kubernetes-манифеста.
+---
+
+Закодируем ключ и сертификат в base64:
+~~~bash
+➜  Deron-D_microservices git:(kubernetes-3) ✗ base64 tls.crt
+LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUREekNDQWZlZ0F3SUJBZ0lVWjdlTDZBT1Fs
+...
+➜  Deron-D_microservices git:(kubernetes-3) ✗ base64 tls.key
+LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2d0lCQURBTkJna3Foa2lHOXcwQkFRRUZB
+...
+~~~
+
+Создадим `kubernetes/reddit/secret.yml`
+~~~yml
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secret-tls
+type: kubernetes.io/tls
+data:
+  # the data is abbreviated in this example
+  tls.crt: |
+    LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUREekNDQWZlZ0F3SUJBZ0lVWjdlTDZBT1Fs
+...
+  tls.key: |
+    LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2d0lCQURBTkJna3Foa2lHOXcwQkFRRUZB
+...
+~~~
+
+Уточним название секрета в спеке `ui-ingress.yml`
+~~~yml
+...
+spec:
+  tls:
+  #- secretName: ui-ingress # Подключаем наш сертификат
+  - secretName: secret-tls # Подключаем наш секрет
+...
+~~~
+
+Применим измененную конфигурацию:
+~~~bash
+kubectl apply -f kubernetes/reddit -n dev
+~~~
+
+### Network Policy
+
+Мы будем использовать NetworkPolicy - инструмент для декларативного описания потоков трафика.
+Давайте ее протестируем.
+Наша задача - ограничить трафик, поступающий на mongodb отовсюду, кроме сервисов post и comment.
+
+<details>
+  <summary>Эксперимент c CLI</summary>
+
+Поднимем кластер с помощью CLI для разнообразия (обязательно с  опцией --enable-network-policy):
+
+~~~bash
+yc managed-kubernetes cluster create \
+--name k8s-dev --zone ru-central1-a \
+--network-name default \
+--enable-network-policy \
+--service-account-name k8s-sa \
+--node-service-account-name k8s-sa \
+--public-ip
+
+yc managed-kubernetes cluster get-credentials k8s-dev --external --force
+~~~
+
+Поднимем приложение:
+~~~bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v0.34.1/deploy/static/provider/cloud/deploy.yaml
+
+kubectl get pods -n ingress-nginx
+NAME                                        READY   STATUS      RESTARTS   AGE
+ingress-nginx-admission-create-zslmh        0/1     Completed   0          42s
+ingress-nginx-admission-patch-zz9jx         0/1     Completed   0          42s
+ingress-nginx-controller-7d7999cdf6-z8tgq   0/1     Running     0          52s
+
+kubectl apply -f ./kubernetes/reddit/dev-namespace.yml
+kubectl apply -f ./kubernetes/reddit/ -n dev
+
+kubectl delete ingress ui -n dev
+kubectl apply -f kubernetes/reddit/ui-ingress.yml -n dev
+
+kubectl get ingress -n dev
+~~~
+
+</details>
+
+Проверим, задействован ли в кластере контроллер сетевых политик Calico:
+~~~bash
+yc managed-kubernetes cluster get k8s-dev | grep -A 1 network_policy
+network_policy:
+  provider: CALICO
+~~~
+
+Создадим `mongo-network-policy.yml` со следующим содержимым:
+~~~yaml
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-db-traffic
+  namespace: dev
+  labels:
+    app: reddit
+spec:
+  podSelector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  policyTypes:
+    - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: reddit
+          component: comment
+~~~
+
+Применяем политику:
+~~~bash
+kubectl apply -f mongo-network-policy.yml -n dev
+~~~
+
+Заходим в приложение:
+
+![kubernetes/k8s-7.png](kubernetes/k8s-7.png)
+
+### Задание
+
+Обновим `mongo-network-policy.yml` так, чтобы post-сервис дошел до базы данных.
+
+~~~yaml
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-db-traffic
+  namespace: dev
+  labels:
+    app: reddit
+spec:
+  podSelector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: reddit
+              component: comment
+        - podSelector:
+            matchLabels:
+              app: reddit
+              component: post
+~~~
+
+## Хранилище для базы
+
+Рассмотрим вопросы хранения данных. Основной Stateful сервис в нашем приложении - это базы данных MongoDB. В текущий момент она запускается в виде Deployment и хранит данные в стандартных Docker Volume-ах. Это имеет несколько проблем:
+- При удалении POD-а удаляется и Volume
+- Потерям Nod'ы с mongo грозит потерей данных
+- Запуск базы на другой ноде запускает новый экземпляр данных
+
+### Volume
+Сейчас используется тип Volume emptyDir. При создании пода с таким типом просто создается пустой docker volume. При остановке POD'а содержимое emptyDir удалится навсегда. Хотя в общем случае падение POD'а не вызывает удаления Volume'а.
+
+Вместо того, чтобы хранить данные локально на ноде, имеет смысл подключить удаленное хранилище.
+
+### PersistentVolume
+
+Используемый механизм Volume-ов можно сделать удобнее. Мы можем использовать не целый выделенный диск для каждого пода, а целый ресурс хранилища, общий для всего кластера Тогда при запуске Stateful- задач в кластере, мы сможем запросить хранилище в виде такого же ресурса, как CPU или оперативная память.
+Для этого будем использовать механизм PersistentVolume.
+
+Для начала создадим диск PersitentVolume в ya.cloud:
+
+~~~bash
+yc compute disk create \
+    --name k8s \
+    --size 4 \
+    --description "disk for k8s"
+~~~
+
+Посмотреть список дисков можно следующей командой:
+
+~~~bash
+yc compute disk list
++----------------------+------+-------------+---------------+--------+----------------------+--------------+
+|          ID          | NAME |    SIZE     |     ZONE      | STATUS |     INSTANCE IDS     | DESCRIPTION  |
++----------------------+------+-------------+---------------+--------+----------------------+--------------+
+| fhmuitl1pqiqafnajdmf | k8s  |  4294967296 | ru-central1-a | READY  |                      | disk for k8s |
++----------------------+------+-------------+---------------+--------+----------------------+--------------+
+~~~
+
+Создадим PV в ya.cloud с помощью `mongo-volume.yml`
+
+~~~yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-pv
+spec:
+  capacity:
+    storage: 4Gi
+  accessModes:
+    - ReadWriteOnce
+  csi:
+    driver: disk-csi-driver.mks.ycloud.io
+    fsType: ext4
+    volumeHandle: fhmuitl1pqiqafnajdmf
+~~~
+
+Создадим PVC с помощью `mongo-claim.yml`
+
+~~~yaml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+spec:
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 4Gi
+  volumeName: mongo-pv
+~~~
+
+Подключим созданный PVC в `mongo-deployment.yml`
+
+~~~yaml
+...
+spec:
+  containers:
+  - image: mongo:3.2
+    name: mongo
+    volumeMounts:
+    - name: mongo-persistent-storage
+      mountPath: /data/db
+  volumes:
+  - name: mongo-persistent-storage
+    persistentVolumeClaim:
+      claimName:  mongo-pvc
+~~~
+
+Передеплоим:
+~~~bash
+kubectl apply -f kubernetes/reddit/mongo-volume.yml -n dev
+kubectl apply -f kubernetes/reddit/mongo-claim.yml -n dev
+kubectl apply -f kubernetes/reddit/mongo-deployment.yml -n dev
+~~~
+
+Дождемся пересоздания POD'а (занимает до 10 минут).
+Зайдем в приложение и добавим пост.
+Удалим deployment.
+
+~~~bash
+kubectl delete deploy mongo -n dev
+~~~
+
+Снова создадим деплой mongo
+~~~bash
+kubectl apply -f mongo-deployment.yml -n dev
+~~~
+
+Наш пост все ее на месте
+
+## **Полезное:**
+- [https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets](https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets)
+- [https://cloud.yandex.ru/docs/managed-kubernetes/operations/calico](https://cloud.yandex.ru/docs/managed-kubernetes/operations/calico)
+
+</details>
