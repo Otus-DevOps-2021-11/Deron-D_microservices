@@ -38,3 +38,6 @@ variable enable_provision {
   description = "Enable provision"
   default     = true
 }
+variable token {
+  description = "<OAuth>"
+}

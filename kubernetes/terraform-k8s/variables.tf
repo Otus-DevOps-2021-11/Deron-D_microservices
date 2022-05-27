@@ -4,11 +4,6 @@ variable cloud_id {
 variable folder_id {
   description = "Folder"
 }
-variable region_id {
-  # Значение региона по умолчанию
-  description = "region"
-  default     = "ru-central1"
-}
 variable zone {
   description = "Zone"
   # Значение по умолчанию
@@ -21,18 +16,35 @@ variable public_key_path {
 # variable image_id {
 #   description = "Disk image"
 # }
+variable network_id {
+  description = "Network"
+}
 variable subnet_id {
   description = "Subnet"
 }
 variable service_account_key_file {
-  description = "key .json"
+  description = "key.json"
 }
 variable private_key_path {
-  description = "path to private key"
+  description = "Path to private key used for ssh access"
 }
-variable count_of_workers {
-  description = "count of workers"
-  default     = 2
+variable region_id {
+  description = "ID of the availability zone where the network load balancer resides"
+  default     = "ru-central1"
+}
+variable count_of_instances {
+  description = "Count of instances"
+  default     = 1
+}
+variable enable_provision {
+  description = "Enable provision"
+  default     = true
+}
+variable token {
+  description = "<OAuth>"
+}
+variable service_account_id {
+  description = "<service_account_id>"
 }
 variable cores {
   description = "VM cores"
@@ -46,9 +58,7 @@ variable disk {
   description = "Disk size"
   default     = 64
 }
-variable network_id {
-  description = "Network id"
-}
-variable service_account_id {
-  description = "Service account ID"
+variable count_of_workers {
+  description = "count_of_workers"
+  default     = 2
 }
